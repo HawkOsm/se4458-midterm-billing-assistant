@@ -70,6 +70,23 @@ export async function linkUnbilledEvents(
   );
 }
 
+// All usage recorded for the period, billed or not (read only).
+export async function sumPeriodUsage(
+  db: Db,
+  subscriberId: number,
+  year: number,
+  month: number,
+): Promise<{ phoneMinutes: number; internetMb: number }> {
+  const { rows } = await db.query<{ phone: string; internet: string }>(
+    `SELECT coalesce(sum(amount) FILTER (WHERE usage_type = 'PHONE'), 0) AS phone,
+            coalesce(sum(amount) FILTER (WHERE usage_type = 'INTERNET'), 0) AS internet
+       FROM billing.usage_events
+      WHERE subscriber_id = $1 AND period_year = $2 AND period_month = $3`,
+    [subscriberId, year, month],
+  );
+  return { phoneMinutes: Number(rows[0]?.phone ?? 0), internetMb: Number(rows[0]?.internet ?? 0) };
+}
+
 export async function sumBilledUsage(
   db: Db,
   billId: number,
@@ -101,7 +118,7 @@ export async function saveCalculatedBill(db: Db, billId: number, amounts: Calcul
     `UPDATE billing.bills
         SET calculated_at = CASE
               WHEN (phone_minutes, internet_mb, phone_charge, internet_charge, tariff_id)
-                   IS DISTINCT FROM ($2::int, $3::int, $4::numeric, $5::numeric, $7::varchar)
+                   IS DISTINCT FROM ($2::bigint, $3::bigint, $4::numeric, $5::numeric, $7::varchar)
               THEN now() ELSE calculated_at END,
             phone_minutes = $2, internet_mb = $3,
             phone_charge = $4::numeric, internet_charge = $5::numeric, total = $6::numeric,
@@ -119,4 +136,73 @@ export async function saveCalculatedBill(db: Db, billId: number, amounts: Calcul
     ],
   );
   return Bill.fromRow(rows[0]!);
+}
+
+// ---------- Add Usage ----------
+
+// Is the period's bill locked (has a payment)? FOR SHARE is a read-lock: it waits for a
+// payment that is in progress (Pay Bill takes FOR UPDATE), and holds that payment back
+// until this usage is committed, so "check unpaid, then insert" can't be overtaken.
+// null = no bill yet for the period.
+export async function lockBillForShare(
+  db: Db,
+  subscriberId: number,
+  year: number,
+  month: number,
+): Promise<{ hasPayments: boolean } | null> {
+  const { rows } = await db.query<{ has_payments: boolean }>(
+    `SELECT paid_amount > 0 AS has_payments FROM billing.bills
+      WHERE subscriber_id = $1 AND period_year = $2 AND period_month = $3
+      FOR SHARE`,
+    [subscriberId, year, month],
+  );
+  const row = rows[0];
+  return row ? { hasPayments: row.has_payments } : null;
+}
+
+// ---------- Pay Bill ----------
+
+// Locks the period's bill for the rest of the transaction (decision 6): concurrent
+// payments of the same bill queue here, so each one sees the balance the previous one
+// left, and two payments can't both pass the balance check. Add Usage's FOR SHARE also
+// waits for it. null = no bill was calculated for the period.
+export async function lockBillForUpdate(
+  db: Db,
+  subscriberId: number,
+  year: number,
+  month: number,
+): Promise<Bill | null> {
+  const { rows } = await db.query<BillRow>(
+    `SELECT * FROM billing.bills
+      WHERE subscriber_id = $1 AND period_year = $2 AND period_month = $3
+      FOR UPDATE`,
+    [subscriberId, year, month],
+  );
+  const row = rows[0];
+  return row ? Bill.fromRow(row) : null;
+}
+
+// Usage recorded for the period after its bill was calculated (not linked to any bill).
+export async function hasUnbilledUsage(db: Db, subscriberId: number, year: number, month: number): Promise<boolean> {
+  const { rows } = await db.query<{ unbilled: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM billing.usage_events
+        WHERE subscriber_id = $1 AND period_year = $2 AND period_month = $3 AND bill_id IS NULL
+     ) AS unbilled`,
+    [subscriberId, year, month],
+  );
+  return rows[0]?.unbilled ?? false;
+}
+
+export async function applyPayment(
+  db: Db,
+  billId: number,
+  paidAmount: string,
+  status: "UNPAID" | "PARTIALLY_PAID" | "PAID",
+): Promise<void> {
+  await db.query("UPDATE billing.bills SET paid_amount = $2::numeric, status = $3 WHERE id = $1", [
+    billId,
+    paidAmount,
+    status,
+  ]);
 }

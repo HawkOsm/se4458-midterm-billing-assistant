@@ -5,9 +5,9 @@ import type { Db } from "./db";
 // Usernames are matched case-insensitively (like the teacher's .ToLower() compare).
 export async function findUserByUsername(db: Db, username: string): Promise<User | null> {
   const { rows } = await db.query<UserRow>(
-    `SELECT u.id, u.username, u.password_hash, s.subscriber_no
+    `SELECT u.id, u.username, u.password_hash, u.role, s.subscriber_no
        FROM billing.users u
-       JOIN billing.subscribers s ON s.id = u.subscriber_id
+       LEFT JOIN billing.subscribers s ON s.id = u.subscriber_id  -- admins have none
       WHERE lower(u.username) = lower($1)`,
     [username],
   );

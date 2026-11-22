@@ -42,6 +42,7 @@ test("returns the stored bill with its remaining balance", async () => {
     paidAmount: "25.00",
     remainingBalance: "50.00",
     status: "PARTIALLY_PAID",
+    estimate: false, // April 2025 is over
   });
 });
 

@@ -4,8 +4,8 @@ import type { Db } from "../db/db";
 import { BillDetailsDto, PageQuery, toBillDetailsDto } from "../dto/billDetailsDto";
 import { BillDto, BillPeriodParams, toBillDto } from "../dto/billDto";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
-import { requireAuth, requireOwnAccount } from "../middleware/auth";
-import { formatPeriod } from "../domain/period";
+import { requireAuth, requireOwnAccountOrAdmin } from "../middleware/auth";
+import { formatPeriod, futurePeriodMessage } from "../domain/period";
 import { BillService } from "../services/billService";
 import { BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
 
@@ -46,19 +46,19 @@ export function billController(api: ApiVersion, db: Db): void {
       summary: "Query Bill Detailed",
       description:
         "The stored bill with usage, charge breakdown, and a page of the usage events it was " +
-        "calculated from (newest first). Requires the subscriber's own token.",
+        "calculated from (newest first). Requires the subscriber's own token, or the provider's admin.",
       security: [{ [BEARER_AUTH]: [] }],
       request: { params: BillPeriodParams, query: PageQuery },
       responses: {
         200: { description: "The bill breakdown and one page of usage events", content: json(BillDetailsDto) },
         400: { description: "Invalid path or paging parameters", content: json(ErrorDto) },
         401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
-        403: { description: "The token belongs to another subscriber", content: json(ErrorDto) },
+        403: { description: "The token belongs to another subscriber (and isn't an admin)", content: json(ErrorDto) },
         404: { description: "No bill has been calculated for this period", content: json(ErrorDto) },
       },
     },
     requireAuth,
-    requireOwnAccount,
+    requireOwnAccountOrAdmin,
     async (req, res) => {
       const { subscriberNo, year, month } = parseOrThrow(BillPeriodParams, req.params);
       const { offset, limit } = parseOrThrow(PageQuery, req.query);
@@ -77,7 +77,7 @@ export function billController(api: ApiVersion, db: Db): void {
       description:
         "Calculates the month's bill from its recorded usage (guide §4.2) and stores it. " +
         "PUT because it is idempotent: repeating it updates the same bill. Allowed until the " +
-        "bill's first payment. Requires the subscriber's own token.",
+        "bill's first payment. Requires the subscriber's own token (to see the month so far), or the provider's admin.",
       security: [{ [BEARER_AUTH]: [] }],
       request: { params: BillPeriodParams },
       responses: {
@@ -85,24 +85,27 @@ export function billController(api: ApiVersion, db: Db): void {
         200: { description: "Bill recalculated (unchanged if no new usage)", content: json(BillDto) },
         400: { description: "Invalid path, or a month that hasn't started yet", content: json(ErrorDto) },
         401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
-        403: { description: "The token belongs to another subscriber", content: json(ErrorDto) },
+        403: { description: "The token belongs to another subscriber (and isn't an admin)", content: json(ErrorDto) },
         404: { description: "Unknown subscriber", content: json(ErrorDto) },
         409: { description: "The bill already has payments and is locked", content: json(ErrorDto) },
+        422: { description: "The month's usage is too large to bill", content: json(ErrorDto) },
       },
     },
     requireAuth,
-    requireOwnAccount,
+    requireOwnAccountOrAdmin,
     async (req, res) => {
       const { subscriberNo, year, month } = parseOrThrow(BillPeriodParams, req.params);
       const period = formatPeriod(year, month);
       const result = await service.calculate(subscriberNo, year, month);
       switch (result.kind) {
         case "futurePeriod":
-          throw new DtoError(`${period} has not started yet; only past or current months can be billed`, 400);
+          throw new DtoError(futurePeriodMessage(year, month, "bills can be calculated"), 400);
         case "noSubscriber":
           throw new DtoError(`Unknown subscriber ${subscriberNo}`, 404);
         case "locked":
           throw new DtoError(`The ${period} bill already has payments and can no longer be recalculated`, 409);
+        case "outOfRange":
+          throw new DtoError(`The ${period} usage is too large to bill (the total would exceed 99,999,999.99)`, 422);
         case "created":
           // Where the new bill can be read: the same URL, with GET (Query Bill).
           res.status(201).location(req.originalUrl).json(toBillDto(result.bill, subscriberNo));

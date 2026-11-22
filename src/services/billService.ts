@@ -5,7 +5,7 @@ import { withTransaction, type Db } from "../db/db";
 import * as subscriberDbContext from "../db/subscriberDbContext";
 import * as usageEventDbContext from "../db/usageEventDbContext";
 import type { Bill } from "../domain/bill";
-import { formatCents } from "../domain/money";
+import { MAX_MONEY_CENTS, formatCents } from "../domain/money";
 import { isFuturePeriod } from "../domain/period";
 import { CURRENT_TARIFF, internetChargeCents, phoneChargeCents } from "../domain/pricing";
 import type { Page, UsageEvent } from "../domain/usageEvent";
@@ -14,6 +14,7 @@ import type { Page, UsageEvent } from "../domain/usageEvent";
 export type CalculateResult =
   | { kind: "created" | "recalculated"; bill: Bill }
   | { kind: "locked" } // the bill has payments (decision 2)
+  | { kind: "outOfRange" } // the total wouldn't fit NUMERIC(10,2): implausible usage
   | { kind: "noSubscriber" }
   | { kind: "futurePeriod" };
 
@@ -63,6 +64,16 @@ export class BillService {
     return withTransaction(this.db, async (tx): Promise<CalculateResult> => {
       const subscriberId = await subscriberDbContext.findSubscriberId(tx, subscriberNo);
       if (subscriberId === null) return { kind: "noSubscriber" };
+
+      // Pre-check, before anything is written: would this month's total fit the money
+      // columns (NUMERIC(10,2))? Every event of the month is either unbilled or already
+      // in this month's one bill, so the whole month's usage is what will be billed.
+      // (Usage arriving between this check and the linking below could, in an extreme
+      // month, still overflow; the database then refuses the save.)
+      const monthUsage = await billDbContext.sumPeriodUsage(tx, subscriberId, year, month);
+      const monthCents =
+        phoneChargeCents(monthUsage.phoneMinutes, CURRENT_TARIFF) + internetChargeCents(monthUsage.internetMb, CURRENT_TARIFF);
+      if (monthCents > MAX_MONEY_CENTS) return { kind: "outOfRange" };
 
       const claim = await billDbContext.claimBillForCalculation(tx, subscriberId, year, month);
       if (!claim) return { kind: "locked" };

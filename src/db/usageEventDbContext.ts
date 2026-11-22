@@ -1,5 +1,12 @@
 // Usage event queries: plain SQL in, domain objects out.
-import { UsageEvent, type Page, type UsageEventRow } from "../domain/usageEvent";
+import {
+  UNIT_AMOUNT,
+  UsageEvent,
+  type Page,
+  type RecordedUsage,
+  type UsageEventRow,
+  type UsageType,
+} from "../domain/usageEvent";
 import type { Db } from "./db";
 
 // One page of the events a stored bill counted (Calculate Bill links them with bill_id),
@@ -30,4 +37,48 @@ export async function getEventsForBill(
     .filter((r): r is { total: string } & UsageEventRow => r.id !== null && r.id !== undefined)
     .map(UsageEvent.fromRow);
   return { items, offset, limit, total };
+}
+
+// ---------- Add Usage (each step runs inside the caller's transaction) ----------
+
+type RecordedRow = UsageEventRow & { period_year: number; period_month: number };
+
+function toRecorded(row: RecordedRow): RecordedUsage {
+  const event = UsageEvent.fromRow(row);
+  return { event, year: row.period_year, month: row.period_month, quantity: event.amount / UNIT_AMOUNT[event.type] };
+}
+
+const RECORDED_COLUMNS = "id, usage_type, amount, created_at, period_year, period_month";
+
+// The event this subscriber already recorded under this Idempotency-Key, if any.
+export async function findByIdempotencyKey(
+  db: Db,
+  subscriberId: number,
+  key: string,
+): Promise<RecordedUsage | null> {
+  const { rows } = await db.query<RecordedRow>(
+    `SELECT ${RECORDED_COLUMNS} FROM billing.usage_events
+      WHERE subscriber_id = $1 AND idempotency_key = $2`,
+    [subscriberId, key],
+  );
+  const row = rows[0];
+  return row ? toRecorded(row) : null;
+}
+
+// Inserts the event, or nothing if this key was just used by a concurrent request (the
+// unique key makes the second request wait for the first, then skip). null = skipped.
+export async function insertUsageEvent(
+  db: Db,
+  usage: { subscriberId: number; year: number; month: number; type: UsageType; amount: number; key: string },
+): Promise<RecordedUsage | null> {
+  const { rows } = await db.query<RecordedRow>(
+    `INSERT INTO billing.usage_events
+         (subscriber_id, period_year, period_month, usage_type, amount, idempotency_key)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (subscriber_id, idempotency_key) DO NOTHING
+     RETURNING ${RECORDED_COLUMNS}`,
+    [usage.subscriberId, usage.year, usage.month, usage.type, usage.amount, usage.key],
+  );
+  const row = rows[0];
+  return row ? toRecorded(row) : null;
 }

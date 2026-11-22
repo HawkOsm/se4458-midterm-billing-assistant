@@ -6,6 +6,8 @@ import swaggerUi from "swagger-ui-express";
 import { ApiVersion, BEARER_AUTH } from "./controllers/apiVersion";
 import { authController } from "./controllers/authController";
 import { billController } from "./controllers/billController";
+import { paymentController } from "./controllers/paymentController";
+import { usageController } from "./controllers/usageController";
 import type { Db } from "./db/db";
 import { buildOpenApiDocument } from "./docs/openapi";
 import { DtoError } from "./dto/dtoError";
@@ -29,6 +31,8 @@ export function createApp(db: Db): express.Express {
   const v1 = new ApiVersion("/api/v1", registry);
   authController(v1, db);
   billController(v1, db);
+  usageController(v1, db);
+  paymentController(v1, db);
   app.use(v1.prefix, v1.router);
 
   // Swagger: the page is at /api-docs and the raw spec at /openapi.json.

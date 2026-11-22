@@ -10,8 +10,8 @@ export interface BillRow {
   subscriber_id: string;
   period_year: number;
   period_month: number;
-  phone_minutes: number;
-  internet_mb: number;
+  phone_minutes: string; // BIGINT (migration 005): pg returns it as a string
+  internet_mb: string;
   phone_charge: string;
   internet_charge: string;
   total: string;
@@ -44,8 +44,8 @@ export class Bill {
       Number(row.subscriber_id),
       row.period_year,
       row.period_month,
-      row.phone_minutes,
-      row.internet_mb,
+      Number(row.phone_minutes),
+      Number(row.internet_mb),
       toCents(row.phone_charge),
       toCents(row.internet_charge),
       toCents(row.total),

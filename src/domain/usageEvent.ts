@@ -34,3 +34,20 @@ export interface Page<T> {
   limit: number;
   total: number;
 }
+
+// What one unit of usage records (guide §2.3, §3.3): 10 phone minutes or 1 MB.
+export const UNIT_AMOUNT: Record<UsageType, number> = { PHONE: 10, INTERNET: 1 };
+
+// One Add Usage call may report several units at once (an extension of the spec, which
+// defines one unit per call; the default stays 1). Without it, 50 MB/s needs 50 calls
+// per second per subscriber; see docs/data-model.md "Scaling".
+export const MAX_QUANTITY = 10_000;
+
+// A stored event together with the period it belongs to (what Add Usage compares a
+// retried request against).
+export interface RecordedUsage {
+  event: UsageEvent;
+  year: number;
+  month: number;
+  quantity: number;
+}

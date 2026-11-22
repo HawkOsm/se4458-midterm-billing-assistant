@@ -16,6 +16,7 @@ import {
 
 interface BillBody {
   subscriberNo: string;
+  estimate: boolean;
   total: string;
   paidAmount: string;
   remainingBalance: string;
@@ -45,7 +46,7 @@ afterEach(async () => {
 
 const AYSE = "5551234";
 const auth = (no: string): Record<string, string> => ({
-  Authorization: `Bearer ${issueToken({ subscriberNo: no }).accessToken}`,
+  Authorization: `Bearer ${issueToken({ role: "SUBSCRIBER", subscriberNo: no }).accessToken}`,
 });
 const asAyse = auth(AYSE);
 const billUrl = (year = 2025, month = 4, no = AYSE): string => `/api/v1/subscribers/${no}/bills/${year}/${month}`;
@@ -76,6 +77,7 @@ test("calculates the guide's worked example: 1,350 minutes + 35 GB = $80 (201)",
     paidAmount: "0.00",
     remainingBalance: "80.00",
     status: "UNPAID",
+    estimate: false, // April 2025 is over
   });
 
   const d = await details();
@@ -164,11 +166,18 @@ test("a month that hasn't started yet is refused with 400", async () => {
   assert.match(((await res.json()) as { error: string }).error, /^2100-12 has not started yet/);
 });
 
-test("the current, unfinished month can be calculated", async () => {
+test("the current, unfinished month can be calculated, and is marked as an estimate everywhere", async () => {
   const now = new Date();
-  const res = await api.put(billUrl(now.getUTCFullYear(), now.getUTCMonth() + 1), asAyse);
+  const [year, month] = [now.getUTCFullYear(), now.getUTCMonth() + 1];
 
-  assert.equal(res.status, 201);
+  const calculated = await api.put(billUrl(year, month), asAyse);
+  const queried = await api.get(billUrl(year, month));
+  const detailed = await api.get(`${billUrl(year, month)}/details`, asAyse);
+
+  assert.equal(calculated.status, 201);
+  for (const res of [calculated, queried, detailed]) {
+    assert.equal(((await res.json()) as { estimate: boolean }).estimate, true);
+  }
 });
 
 test("without a token returns 401", async () => {
@@ -189,3 +198,43 @@ test("a valid token for a subscriber that doesn't exist returns 404", async () =
 test("invalid months are rejected with 400 before any work", async () => {
   assert.equal((await api.put(billUrl(2025, 13), asAyse)).status, 400);
 });
+
+// Rows of huge usage, written straight to the table (Add Usage caps each call at 10,000).
+async function insertHugeInternet(rows: number, mbPerRow: number): Promise<void> {
+  await tx.client.query(
+    `INSERT INTO billing.usage_events (subscriber_id, period_year, period_month, usage_type, amount, idempotency_key)
+     SELECT s.id, 2025, 4, 'INTERNET', $2, 'huge-' || g
+       FROM billing.subscribers s, generate_series(1, $1::int) g WHERE s.subscriber_no = $3`,
+    [rows, mbPerRow, AYSE],
+  );
+}
+
+test("a month above the old INTEGER limit (2,147,483,647 MB) still bills (BIGINT, migration 005)", async () => {
+  await insertHugeInternet(3, 1_000_000_000); // 3,000,000,000 MB
+
+  const res = await api.put(billUrl(), asAyse);
+
+  assert.equal(res.status, 201);
+  assert.equal(((await res.json()) as BillBody).total, "3000030.00"); // $50 + 299,998 blocks x $10
+});
+
+test("usage too large to bill is refused with 422 and nothing is linked", async () => {
+  await insertHugeInternet(60, 2_000_000_000); // 120 billion MB: charge > 99,999,999.99
+
+  const res = await api.put(billUrl(), asAyse);
+
+  assert.equal(res.status, 422);
+  assert.match(((await res.json()) as { error: string }).error, /too large to bill/);
+  const { rows } = await tx.client.query("SELECT count(*)::int AS n FROM billing.usage_events WHERE bill_id IS NOT NULL");
+  assert.equal(rows[0].n, 0, "the transaction was rolled back");
+  assert.equal((await api.get(billUrl())).status, 404, "no bill was stored");
+});
+
+test("the provider's admin can calculate any subscriber's bill", async () => {
+  const admin = { Authorization: `Bearer ${issueToken({ role: "ADMIN", username: "admin" }).accessToken}` };
+
+  const res = await api.put(billUrl(), admin);
+
+  assert.equal(res.status, 201);
+});
+

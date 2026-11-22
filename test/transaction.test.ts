@@ -34,3 +34,42 @@ test("rolls back everything when the work throws", async () => {
   const { rows } = await pool.query("SELECT 1 FROM billing.subscribers WHERE subscriber_no = $1", [no]);
   assert.equal(rows.length, 0);
 });
+
+test("on a caller's connection, a failure is still undone (savepoint)", async () => {
+  const client = await pool.connect();
+  const no = `sp${Date.now()}`; // fits subscriber_no VARCHAR(20)
+  try {
+    await client.query("BEGIN");
+    await assert.rejects(
+      withTransaction(client, async (tx) => {
+        await tx.query("INSERT INTO billing.subscribers (subscriber_no, full_name) VALUES ($1, 'Savepoint')", [no]);
+        throw new Error("boom");
+      }),
+      /boom/,
+    );
+    const { rows } = await client.query("SELECT 1 FROM billing.subscribers WHERE subscriber_no = $1", [no]);
+    assert.equal(rows.length, 0, "undone inside the still-open outer transaction");
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
+});
+
+
+test("on a connection with no open transaction, it opens one (and still rolls back)", async () => {
+  const client = await pool.connect();
+  const no = `ot${Date.now()}`; // fits subscriber_no VARCHAR(20)
+  try {
+    await assert.rejects(
+      withTransaction(client, async (tx) => {
+        await tx.query("INSERT INTO billing.subscribers (subscriber_no, full_name) VALUES ($1, 'Own tx')", [no]);
+        throw new Error("boom");
+      }),
+      /boom/,
+    );
+    const { rows } = await client.query("SELECT 1 FROM billing.subscribers WHERE subscriber_no = $1", [no]);
+    assert.equal(rows.length, 0);
+  } finally {
+    client.release();
+  }
+});

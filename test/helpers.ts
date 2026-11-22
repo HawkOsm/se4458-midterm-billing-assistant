@@ -66,7 +66,7 @@ export async function beginTestTransaction(): Promise<TestTx> {
 export interface TestServer {
   get: (path: string, headers?: Record<string, string>) => Promise<Response>;
   put: (path: string, headers?: Record<string, string>) => Promise<Response>;
-  postJson: (path: string, body: unknown) => Promise<Response>;
+  postJson: (path: string, body: unknown, headers?: Record<string, string>) => Promise<Response>;
   close: () => Promise<void>;
 }
 
@@ -83,10 +83,10 @@ export async function listen(app: Express): Promise<TestServer> {
   return {
     get: (path, headers = {}) => fetch(base + path, { headers }),
     put: (path, headers = {}) => fetch(base + path, { method: "PUT", headers }),
-    postJson: (path, body) =>
+    postJson: (path, body, headers = {}) =>
       fetch(base + path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...headers },
         body: typeof body === "string" ? body : JSON.stringify(body),
       }),
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
@@ -188,3 +188,12 @@ export async function insertUsageEvents(
     ],
   );
 }
+
+// The provider's admin login (role ADMIN, no subscriber).
+export async function insertAdmin(client: PoolClient, username: string, password: string): Promise<void> {
+  await client.query(
+    "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, $1, $2, 'ADMIN')",
+    [username, await hashPassword(password)],
+  );
+}
+

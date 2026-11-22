@@ -13,6 +13,6 @@ export class AuthService {
     const user = await userDbContext.findUserByUsername(this.db, username);
     const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !ok) return null;
-    return issueToken({ subscriberNo: user.subscriberNo });
+    return issueToken(user.identity);
   }
 }

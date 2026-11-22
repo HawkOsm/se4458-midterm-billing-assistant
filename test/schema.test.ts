@@ -114,3 +114,28 @@ test("a bill with payments can't be deleted", async () => {
   await tx.client.query(insertPayment, [billId, "tx-2", "10.00"]);
   await assertRejectedBy("fk_payments_bill_id_bills", "DELETE FROM billing.bills WHERE id = $1", [billId]);
 });
+
+test("a PHONE event must be whole 10-minute units", async () => {
+  const subscriberId = await insertSubscriber(tx.client, "5551234");
+  await assertRejectedBy(
+    "ck_usage_events_phone_whole_units",
+    `INSERT INTO billing.usage_events (subscriber_id, period_year, period_month, usage_type, amount, idempotency_key)
+     VALUES ($1, 2025, 4, 'PHONE', 15, 'odd-minutes')`,
+    [subscriberId],
+  );
+});
+
+test("an admin login can't belong to a subscriber, and a subscriber login must", async () => {
+  const subscriberId = await insertSubscriber(tx.client, "5551234");
+  await assertRejectedBy(
+    "ck_users_role_subscriber",
+    "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES ($1, 'x', 'h', 'ADMIN')",
+    [subscriberId],
+  );
+  await assertRejectedBy(
+    "ck_users_role_subscriber",
+    "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, 'y', 'h', 'SUBSCRIBER')",
+  );
+  await assertRejectedBy("ck_users_role", "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, 'z', 'h', 'ROOT')");
+});
+

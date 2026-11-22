@@ -4,6 +4,9 @@
 
 const MONEY_TEXT = /^(-?)(\d+)(?:\.(\d{1,2}))?$/;
 
+// The largest amount a NUMERIC(10,2) column can hold: 99,999,999.99.
+export const MAX_MONEY_CENTS = 9_999_999_999;
+
 export function toCents(text: string): number {
   const match = MONEY_TEXT.exec(text);
   if (!match) throw new Error(`Not a money value: "${text}"`);
