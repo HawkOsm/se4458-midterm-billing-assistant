@@ -26,14 +26,16 @@ Other commands: `npm test`, `npm run typecheck`, `npm run build` and `npm start`
 
 ## Demo accounts
 
-Fictitious test data created by `npm run seed`. The passwords are public on purpose and come from
-`.env.example`.
+Fictitious test data created by `npm run seed`. The passwords and the key are public on purpose and
+come from `.env.example`.
 
-| Username | Password | Role | Subscriber No |
-| --- | --- | --- | --- |
-| ayse | Demo-Ayse-2025 | subscriber | 5551234 |
-| mehmet | Demo-Mehmet-2025 | subscriber | 5559999 |
-| admin | Demo-Admin-2025 | provider's admin | - |
+| Username | Password | Subscriber No |
+| --- | --- | --- |
+| ayse | Demo-Ayse-2025 | 5551234 |
+| mehmet | Demo-Mehmet-2025 | 5559999 |
+
+The provider's systems don't log in: they send an API key. The demo key (named `provider-demo`) is
+`pk_demo-provider-key-public-do-not-deploy-7f3c2a91`.
 
 The seed also records usage and calculates bills for the assignment's example questions
 ("What is my October bill?", "Why is my October bill higher?"): Ayse September 2026 **$50**
@@ -42,10 +44,12 @@ internet blocks), Mehmet October 2026 **$70**. Running the seed again adds nothi
 
 ## Endpoints
 
-All routes are under `/api/v1`. There are two roles. A **subscriber** acts only on their own number
-(another subscriber's gets 403), and the AI agent always works as the subscriber who logged in. The
-provider's **admin** records usage and can calculate or read any subscriber's bill, but can't pay
-for one. Errors are always `{ "error": "message" }`.
+All routes are under `/api/v1`. Two kinds of caller. A **subscriber** logs in (`POST /login`,
+then `Authorization: Bearer <token>`) and acts only on their own number (another subscriber's gets
+403); the AI agent always works as the subscriber who logged in. The **provider's systems** (the
+network's usage collector, the billing run) send `X-API-Key: <key>`: they record usage and can
+calculate or read any subscriber's bill, but can't pay for one. Errors are always
+`{ "error": "message" }`.
 Every bill response has `estimate`: `true` while the month is still running, so the total is only
 the amount so far and can't be paid yet.
 
@@ -53,9 +57,9 @@ the amount so far and can't be paid yet.
 | --- | --- | --- | --- | --- |
 | Log in | `POST /login` | anyone | 200 token (15 min) | 400, 401 |
 | Query Bill | `GET /subscribers/{no}/bills/{year}/{month}` | anyone (assignment: no auth) | 200 | 400, 404 |
-| Query Bill Detailed | `GET /subscribers/{no}/bills/{year}/{month}/details?offset=0&limit=20` | own subscriber, admin | 200 | 400, 401, 403, 404 |
-| Calculate Bill | `PUT /subscribers/{no}/bills/{year}/{month}` | own subscriber, admin | 201 created, 200 recalculated | 400, 401, 403, 404, 409, 422 |
-| Add Usage | `POST /subscribers/{no}/usage` + `Idempotency-Key` header | admin | 201 | 400, 401, 403, 404, 409 |
+| Query Bill Detailed | `GET /subscribers/{no}/bills/{year}/{month}/details?offset=0&limit=20` | own subscriber, provider key | 200 | 400, 401, 403, 404 |
+| Calculate Bill | `PUT /subscribers/{no}/bills/{year}/{month}` | own subscriber, provider key | 201 created, 200 recalculated | 400, 401, 403, 404, 409, 422 |
+| Add Usage | `POST /subscribers/{no}/usage` + `Idempotency-Key` header | provider key | 201 | 400, 401, 403, 404, 409 |
 | Pay Bill | `POST /subscribers/{no}/bills/{year}/{month}/payments` | own subscriber | 201 | 400, 401, 403, 404, 409, 422 |
 
 The assignment lists each operation with its parameters; here the subscriber, year and month are
@@ -68,18 +72,18 @@ seeded database: after the payment, April 2025 is locked, so a second run gets 4
 API=http://localhost:3000/api/v1
 login() { curl -s -X POST $API/login -H "Content-Type: application/json" \
   -d "{\"username\":\"$1\",\"password\":\"$2\"}" | node -pe 'JSON.parse(require("fs").readFileSync(0)).accessToken'; }
-ADMIN="Authorization: Bearer $(login admin Demo-Admin-2025)"
+PROVIDER="X-API-Key: pk_demo-provider-key-public-do-not-deploy-7f3c2a91"
 AYSE="Authorization: Bearer $(login ayse Demo-Ayse-2025)"
 KEY() { node -e 'console.log(crypto.randomUUID())'; }
 
-# 1) the provider (admin) records April 2025: 1,350 minutes and 35 GB (the guide's worked example)
-curl -s -X POST $API/subscribers/5551234/usage -H "$ADMIN" -H "Idempotency-Key: $(KEY)" \
+# 1) the provider's systems record April 2025: 1,350 minutes and 35 GB (the guide's worked example)
+curl -s -X POST $API/subscribers/5551234/usage -H "$PROVIDER" -H "Idempotency-Key: $(KEY)" \
   -H "Content-Type: application/json" -d '{"year":2025,"month":4,"usageType":"PHONE","quantity":135}'
 for MB in 10000 10000 10000 5000; do          # 35,000 MB
-  curl -s -X POST $API/subscribers/5551234/usage -H "$ADMIN" -H "Idempotency-Key: $(KEY)" \
+  curl -s -X POST $API/subscribers/5551234/usage -H "$PROVIDER" -H "Idempotency-Key: $(KEY)" \
     -H "Content-Type: application/json" -d "{\"year\":2025,\"month\":4,\"usageType\":\"INTERNET\",\"quantity\":$MB}"
 done
-curl -s -X PUT $API/subscribers/5551234/bills/2025/4 -H "$ADMIN"           # calculate: total "80.00"
+curl -s -X PUT $API/subscribers/5551234/bills/2025/4 -H "$PROVIDER"        # calculate: total "80.00"
 
 # 2) the subscriber reads and pays
 curl -s $API/subscribers/5551234/bills/2025/4                              # query (no login needed)
@@ -110,10 +114,12 @@ helpers and the tariff (prices).
   once and is both mounted and added to Swagger from that single declaration.
 - **Swagger** is generated from the same zod schemas that validate requests, and a test checks
   that every documented route really answers.
-- **Login:** JWT (HS256, 15 minutes) with a `role` claim: a subscriber's token has the subscriber
-  number as its subject, the admin's has its username. Passwords are stored as salted scrypt
-  hashes. A subscriber's token must match the number in the URL, so knowing someone's subscriber
-  number is not enough to read or change their data.
+- **Login:** subscribers get a JWT (HS256, 15 minutes) with their subscriber number as its subject;
+  passwords are stored as salted scrypt hashes. The token must match the number in the URL, so
+  knowing someone's subscriber number is not enough to read or change their data.
+- **Provider API keys:** the provider's systems authenticate with a key in `X-API-Key`. The
+  database stores only its SHA-256 hash (a fast hash is enough for a long random key, unlike a
+  password), and a key can be revoked.
 - **Retries are safe:** Add Usage needs an `Idempotency-Key` and Pay Bill a `transactionId`; sending
   the same request again returns the first answer (with `Idempotent-Replayed: true`) and records
   nothing new. Calculate Bill is a `PUT` and safe to repeat by nature.
@@ -150,12 +156,12 @@ Not stated in the assignment or the billing guide, so decided here:
 
 - **Rounding:** a started block is a full block (1,001 minutes is $10; 20,001 MB is $60, GB is not
   rounded first). Internet's $50 is charged even with zero usage (guide §3.1). 1 GB = 1,000 MB.
-- **Identity and roles:** one login per subscriber, plus the provider's admin. Group 2 defines no
-  admin application, but the assignment says "administrative operations must be authorized", and
-  recording a customer's usage is one: it comes from the provider's network, so only the admin
-  can do it. Subscribers can still calculate their own bill (to see the month so far) and read and
-  pay it; the admin can calculate and read any bill but never pays for a subscriber. Query Bill
-  needs no login because the assignment says so.
+- **Identity:** one login per subscriber (people), and API keys for the provider's systems
+  (machines). Group 2 defines no admin application, but the assignment says "administrative
+  operations must be authorized", and recording a customer's usage is one: it comes from the
+  provider's network, so only a provider key can do it. Subscribers can still calculate their own
+  bill (to see the month so far) and read and pay it; a provider key can calculate and read any
+  bill but never pays for a subscriber. Query Bill needs no login because the assignment says so.
 - **Months are UTC.** A month that hasn't started can't get usage or a bill (400), so no
   real-looking $50 bill is made for the future. The current month can be calculated, but its
   bill is marked `estimate: true` until the month ends (guide §4.4: an estimate must not look
@@ -220,8 +226,8 @@ npm test
 ```
 
 ```
-ℹ tests 162
-ℹ pass 162
+ℹ tests 164
+ℹ pass 164
 ℹ fail 0
 ```
 

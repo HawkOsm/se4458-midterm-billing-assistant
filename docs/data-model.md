@@ -14,7 +14,7 @@ Redis (ElastiCache) is planned as a cache for Query Bill responses (not built ye
 
 ```mermaid
 erDiagram
-    SUBSCRIBERS |o--o| USERS : "logs in as (admins: none)"
+    SUBSCRIBERS ||--|| USERS : "logs in as"
     SUBSCRIBERS ||--o{ USAGE_EVENTS : records
     SUBSCRIBERS ||--o{ BILLS : "is billed"
     BILLS ||--o{ PAYMENTS : "is paid by"
@@ -28,8 +28,7 @@ erDiagram
     }
     USERS {
         bigint id PK
-        bigint subscriber_id FK,UK "NULL for ADMIN (migration 006)"
-        varchar role "SUBSCRIBER | ADMIN"
+        bigint subscriber_id FK,UK "1:1 with subscriber"
         varchar username UK
         varchar password_hash "scrypt (salted)"
         timestamptz created_at
@@ -59,6 +58,13 @@ erDiagram
         varchar status "UNPAID | PARTIALLY_PAID | PAID"
         timestamptz calculated_at
         varchar tariff_id "price list used, e.g. MOB-BILLING-2026-01"
+    }
+    API_KEYS {
+        bigint id PK
+        varchar name UK "e.g. usage-collector"
+        char key_hash UK "SHA-256 of the key; the key itself is never stored"
+        timestamptz created_at
+        timestamptz revoked_at "NULL = active"
     }
     PAYMENTS {
         bigint id PK
@@ -100,7 +106,7 @@ MCP server only reads it. Columns follow the output format the guide asks for in
 | ✅ 4 | Add Usage requires an `Idempotency-Key` header; a repeat returns the first result and adds nothing | Add Usage is an "increment", which the class notes say is not idempotent on its own |
 | ✅ 5 | Pay Bill treats `transactionId` as its idempotency key; a repeat with the same details replays the original result, a repeat with different details → 409 | No double charge on retries (class slide 31) |
 | ✅ 6 | Pay Bill locks the bill row (`SELECT … FOR UPDATE`) in one transaction | Two concurrent payments can't both pass the balance check (concurrency slide 32) |
-| ✅ 7 | Own `users` table + JWT with a `role` claim: SUBSCRIBER (token `sub` = subscriber_no) or ADMIN (the provider's operator, `sub` = username, no subscriber) | The agent only ever works as the logged-in subscriber; provider-side operations need the admin (migration 006) |
+| ✅ 7 | Subscribers log in (own `users` table + JWT, token `sub` = subscriber_no); the provider's systems use API keys (`api_keys`, `X-API-Key`, only a SHA-256 hash stored, revocable) | People get accounts, machines get keys; the agent only ever works as the logged-in subscriber (migration 007) |
 | ✅ 8 | Money as `NUMERIC(10,2)`; integer cents in TypeScript, `"75.00"` strings in JSON | Exact amounts, no float rounding |
 | ✅ 9 | Calculate Bill links the usage events it sums (`usage_events.bill_id`), in the same transaction | Query Bill Detailed lists exactly what the stored total counted; a timestamp filter was racy (migration 003) |
 | ✅ 10 | Each bill stores its `tariff_id` | An old bill is explained with the prices that produced it, even after a price change (migration 004) |
@@ -135,7 +141,7 @@ Rows marked *assumption* are not stated in either document and go into the READM
 | --- | --- | --- |
 | 1 | Internet $50 is charged every month, even with zero usage | guide §3.1 |
 | 2 | Pay Bill never takes more than the remaining balance: an amount above it, or any payment on a fully paid bill, gets 422. A malformed or non-positive amount is invalid input (400), like every other endpoint | assignment line 87 "preserve balance"; Group 1 line 38 ("reject … amounts exceeding balance") |
-| 3 | Roles: Add Usage is ADMIN only; Calculate Bill and Query Bill Detailed are the own SUBSCRIBER or ADMIN; Pay Bill is the own SUBSCRIBER only; Query Bill needs no login | assignment table (all "Authentication: YES" except Query Bill); line 113 "administrative operations must be authorized" and "never … access another user's private data". *Assumption:* usage comes from the provider's network, so only the admin records it; Group 2 defines no admin application |
+| 3 | Access: Add Usage needs a provider API key; Calculate Bill and Query Bill Detailed accept the own subscriber's token or a provider key; Pay Bill only the own subscriber's token; Query Bill needs nothing; both a key and a token in one request → 400 | assignment table (all "Authentication: YES" except Query Bill); line 113 "administrative operations must be authorized" and "never … access another user's private data". *Assumption:* usage comes from the provider's network, so only the provider's systems record it; Group 2 defines no admin application |
 | 4 | Add Usage for a period whose bill is locked (has a payment) → 409 | *assumption* — follows from settled decision 2 (bills lock after first payment); prevents unbilled usage |
 | 5 | Pay Bill for a period with no stored bill → 404 "calculate the bill first" | guide §4.4: bills are produced by Calculate Bill and an estimate must not be treated as a stored bill |
 | 6 | Bill status: `UNPAID` (paid = 0), `PARTIALLY_PAID` (0 < paid < total), `PAID` (paid = total) | guide §5.1 "a partial payment … does not mark the bill fully paid" |
