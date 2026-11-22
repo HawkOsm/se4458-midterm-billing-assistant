@@ -4,11 +4,9 @@ import { z } from "zod";
 // A missing or malformed value stops the app at startup instead of failing later.
 // Locally they come from .env; on AWS, ECS injects them (secrets from Secrets Manager).
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-export function isLocalHost(host: string): boolean {
-  return LOCAL_HOSTS.has(host);
-}
+// Host names that mean "the Postgres on this machine": loopback, plus the names Docker
+// uses (`postgres` is our compose.yaml service, for when the API itself runs in compose).
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "host.docker.internal"]);
 
 // .env.example ships a PUBLIC signing key with this prefix, so `cp .env.example .env`
 // works out of the box. Anyone can read it, so anyone could forge tokens with it:
@@ -16,6 +14,8 @@ export function isLocalHost(host: string): boolean {
 export const PUBLIC_DEV_SECRET_PREFIX = "local-dev-only-";
 
 const Env = z.object({
+  // ECS sets production; everything else defaults to development.
+  APP_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   POSTGRES_HOST: z.string().default("127.0.0.1"),
   POSTGRES_PORT: z.coerce.number().int().positive().default(5432),
@@ -35,12 +35,26 @@ const Env = z.object({
 
 export type Config = z.infer<typeof Env>;
 
+// What the settings say about the database. Not production, no TLS (RDS requires TLS:
+// rds.force_ssl defaults to on for PostgreSQL 15+), and a local host name. Settings can't
+// see through a tunnel (127.0.0.1 forwarded to RDS), so db/databaseGuard.ts also asks the
+// database itself after connecting.
+export function isLocalDatabase(cfg: Config): boolean {
+  return cfg.APP_ENV !== "production" && !cfg.POSTGRES_SSL && LOCAL_HOSTS.has(cfg.POSTGRES_HOST);
+}
+
+export function usesPublicDevSecret(cfg: Config): boolean {
+  return cfg.JWT_SECRET.startsWith(PUBLIC_DEV_SECRET_PREFIX);
+}
+
 export function parseConfig(env: NodeJS.ProcessEnv): Config {
   const parsed = Env.parse(env);
-  if (parsed.JWT_SECRET.startsWith(PUBLIC_DEV_SECRET_PREFIX) && !isLocalHost(parsed.POSTGRES_HOST)) {
+  if (usesPublicDevSecret(parsed) && !isLocalDatabase(parsed)) {
     throw new Error(
-      `Refusing to start: JWT_SECRET is the public development key from .env.example, ` +
-        `but the database (${parsed.POSTGRES_HOST}) is not local. Set a private random JWT_SECRET.`,
+      "Refusing to start: JWT_SECRET is the public development key from .env.example, " +
+        `but this is not a local database (APP_ENV=${parsed.APP_ENV}, ` +
+        `POSTGRES_HOST=${parsed.POSTGRES_HOST}, POSTGRES_SSL=${parsed.POSTGRES_SSL}). ` +
+        "Set a private random JWT_SECRET.",
     );
   }
   return parsed;

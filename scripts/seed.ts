@@ -7,7 +7,8 @@
 // Passwords come from the environment, never from this file: .env locally, and
 // whatever you choose for the hosted demo (the README lists the demo logins).
 import { z } from "zod";
-import { config, isLocalHost } from "../src/config";
+import { config, isLocalDatabase } from "../src/config";
+import { isAmazonRds } from "../src/db/databaseGuard";
 import { pool } from "../src/db/db";
 import { hashPassword } from "../src/services/passwordHasher";
 
@@ -16,14 +17,14 @@ const DEMO_ACCOUNTS = [
   { subscriberNo: "5559999", fullName: "Mehmet Kaya", username: "mehmet", passwordEnv: "SEED_PASSWORD_MEHMET" },
 ] as const;
 
+const ALLOW_REMOTE = process.argv.includes("--allow-remote");
+const REMOTE_HINT = "Re-run with `npm run seed -- --allow-remote` if this is intended.";
+
 // Stops before touching the database if the target isn't local, unless asked explicitly:
 // a wrong .env must not plant publicly known logins on the deployed database.
 function assertSafeTarget(): void {
-  if (isLocalHost(config.POSTGRES_HOST) || process.argv.includes("--allow-remote")) return;
-  throw new Error(
-    `Refusing to seed ${config.POSTGRES_HOST}: not a local database. ` +
-      "Re-run with `npm run seed -- --allow-remote` if this is intended.",
-  );
+  if (isLocalDatabase(config) || ALLOW_REMOTE) return;
+  throw new Error(`Refusing to seed ${config.POSTGRES_HOST}: not a local database. ${REMOTE_HINT}`);
 }
 
 // Every password must be set; report all missing names at once.
@@ -44,6 +45,10 @@ async function main(): Promise<void> {
   const passwords = readPasswords();
   const client = await pool.connect();
   try {
+    // Settings can't see through a tunnel (127.0.0.1 forwarded to RDS); the database can.
+    if (!ALLOW_REMOTE && (await isAmazonRds(client))) {
+      throw new Error(`Refusing to seed: the connected database is Amazon RDS. ${REMOTE_HINT}`);
+    }
     await client.query("BEGIN");
     for (const account of DEMO_ACCOUNTS) {
       const { rows } = await client.query<{ id: string }>(

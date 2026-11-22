@@ -10,8 +10,8 @@ const DEV_KEY = `${PUBLIC_DEV_SECRET_PREFIX}public-key-do-not-deploy-test`;
 const PRIVATE_KEY = "a-private-random-key-0123456789abcdef";
 const RDS_HOST = "billing.abc123.eu-north-1.rds.amazonaws.com";
 
-test("the public dev key is accepted with a local database", () => {
-  for (const host of ["127.0.0.1", "localhost", "::1"]) {
+test("the public dev key is accepted with a local database (incl. Docker host names)", () => {
+  for (const host of ["127.0.0.1", "localhost", "::1", "postgres", "host.docker.internal"]) {
     assert.equal(parseConfig({ JWT_SECRET: DEV_KEY, POSTGRES_HOST: host }).JWT_SECRET, DEV_KEY);
   }
 });
@@ -21,6 +21,24 @@ test("the public dev key is refused with a remote database", () => {
     () => parseConfig({ JWT_SECRET: DEV_KEY, POSTGRES_HOST: RDS_HOST }),
     /Refusing to start: JWT_SECRET is the public development key/,
   );
+});
+
+test("the public dev key is refused in production, even with a local host", () => {
+  assert.throws(
+    () => parseConfig({ JWT_SECRET: DEV_KEY, POSTGRES_HOST: "127.0.0.1", APP_ENV: "production" }),
+    /APP_ENV=production/,
+  );
+});
+
+test("the public dev key is refused over TLS, even with a local host (tunnel to RDS)", () => {
+  assert.throws(
+    () => parseConfig({ JWT_SECRET: DEV_KEY, POSTGRES_HOST: "127.0.0.1", POSTGRES_SSL: "true" }),
+    /POSTGRES_SSL=true/,
+  );
+});
+
+test("a private key works in production", () => {
+  assert.equal(parseConfig({ JWT_SECRET: PRIVATE_KEY, APP_ENV: "production", POSTGRES_SSL: "true" }).APP_ENV, "production");
 });
 
 test("a private key works with a remote database", () => {
