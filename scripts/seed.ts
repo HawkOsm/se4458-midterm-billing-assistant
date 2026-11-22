@@ -7,7 +7,7 @@
 // Passwords come from the environment, never from this file: .env locally, and
 // whatever you choose for the hosted demo (the README lists the demo logins).
 import { z } from "zod";
-import { config } from "../src/config";
+import { config, isLocalHost } from "../src/config";
 import { pool } from "../src/db/db";
 import { hashPassword } from "../src/services/passwordHasher";
 
@@ -16,12 +16,10 @@ const DEMO_ACCOUNTS = [
   { subscriberNo: "5559999", fullName: "Mehmet Kaya", username: "mehmet", passwordEnv: "SEED_PASSWORD_MEHMET" },
 ] as const;
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
 // Stops before touching the database if the target isn't local, unless asked explicitly:
 // a wrong .env must not plant publicly known logins on the deployed database.
 function assertSafeTarget(): void {
-  if (LOCAL_HOSTS.has(config.POSTGRES_HOST) || process.argv.includes("--allow-remote")) return;
+  if (isLocalHost(config.POSTGRES_HOST) || process.argv.includes("--allow-remote")) return;
   throw new Error(
     `Refusing to seed ${config.POSTGRES_HOST}: not a local database. ` +
       "Re-run with `npm run seed -- --allow-remote` if this is intended.",
