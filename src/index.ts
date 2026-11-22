@@ -1,11 +1,13 @@
 // Entry point (like the teacher's index.js / Program.cs): start the HTTP server.
 // Dev: npm run dev   Production: npm run build && npm start
 import { createApp } from "./app";
-import { config } from "./config";
+import { apiConfig } from "./config";
 import { assertSafeSigningKey } from "./db/databaseGuard";
 import { pool } from "./db/db";
 
 async function main(): Promise<void> {
+  // Read (and check) the API settings first: a missing JWT_SECRET stops startup here.
+  const config = apiConfig();
   // Checked against the real database before any request is served.
   await assertSafeSigningKey(pool);
 

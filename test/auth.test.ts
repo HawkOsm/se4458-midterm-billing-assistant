@@ -3,7 +3,7 @@ import "./testEnv"; // before src/config is imported (it reads process.env once)
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import jwt from "jsonwebtoken";
-import { config } from "../src/config";
+import { apiConfig } from "../src/config";
 import {
   beginTestTransaction,
   closePool,
@@ -38,7 +38,7 @@ test("valid credentials return a 15-minute Bearer token for the subscriber", asy
   assert.equal(body.tokenType, "Bearer");
   assert.equal(body.expiresIn, 900);
 
-  const claims = jwt.verify(body.accessToken, config.JWT_SECRET) as jwt.JwtPayload;
+  const claims = jwt.verify(body.accessToken, apiConfig().JWT_SECRET) as jwt.JwtPayload;
   assert.equal(claims.sub, "5551234");
   assert.equal(claims.iss, "billing-api");
   assert.equal(claims.aud, "billing-assistant");

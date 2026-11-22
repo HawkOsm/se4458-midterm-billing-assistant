@@ -1,14 +1,14 @@
 import { Pool, type PoolClient } from "pg";
-import { config } from "../config";
+import { dbConfig } from "../config";
 
 // One connection pool per process (like the teacher's db/db.js holds one database handle).
 export const pool = new Pool({
-  host: config.POSTGRES_HOST,
-  port: config.POSTGRES_PORT,
-  database: config.POSTGRES_DB,
-  user: config.POSTGRES_USER,
-  password: config.POSTGRES_PASSWORD,
-  ssl: config.POSTGRES_SSL ? { rejectUnauthorized: true } : false,
+  host: dbConfig.POSTGRES_HOST,
+  port: dbConfig.POSTGRES_PORT,
+  database: dbConfig.POSTGRES_DB,
+  user: dbConfig.POSTGRES_USER,
+  password: dbConfig.POSTGRES_PASSWORD,
+  ssl: dbConfig.POSTGRES_SSL ? { rejectUnauthorized: true } : false,
   max: 10,
 });
 

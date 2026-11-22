@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { Client, type PoolClient } from "pg";
 import { createApp } from "../src/app";
-import { config } from "../src/config";
+import { dbConfig as config } from "../src/config";
 import { pool } from "../src/db/db";
 import { migrate } from "../src/db/migrate";
 import { hashApiKey } from "../src/services/apiKeyService";

@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { errorHandler } from "../src/app";
-import { config } from "../src/config";
+import { apiConfig } from "../src/config";
 import { authenticate, getAuth, requireOwnAccount, requireOwnAccountOrProvider, requireProvider } from "../src/middleware/auth";
 import { hashApiKey } from "../src/services/apiKeyService";
 import { issueToken } from "../src/services/tokenService";
@@ -35,7 +35,7 @@ after(() => api.close());
 
 const PATH = "/subscribers/5551234/private";
 const bearer = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
-const valid = { issuer: config.JWT_ISSUER, audience: config.JWT_AUDIENCE, subject: "5551234" };
+const valid = { issuer: apiConfig().JWT_ISSUER, audience: apiConfig().JWT_AUDIENCE, subject: "5551234" };
 
 test("a valid token for the same subscriber gets through", async () => {
   const { accessToken } = issueToken({ subscriberNo: "5551234" });
@@ -64,10 +64,10 @@ test("no Authorization header returns 401 with WWW-Authenticate", async () => {
 
 const forged: [string, () => string][] = [
   ["signed with another secret", () => jwt.sign({}, "x".repeat(40), { ...valid, expiresIn: 900 })],
-  ["expired", () => jwt.sign({ exp: Math.floor(Date.now() / 1000) - 5 }, config.JWT_SECRET, valid)],
-  ["for another audience", () => jwt.sign({}, config.JWT_SECRET, { ...valid, audience: "other-app", expiresIn: 900 })],
-  ["from another issuer", () => jwt.sign({}, config.JWT_SECRET, { ...valid, issuer: "evil", expiresIn: 900 })],
-  ["with no subject", () => jwt.sign({}, config.JWT_SECRET, { issuer: valid.issuer, audience: valid.audience, expiresIn: 900 })],
+  ["expired", () => jwt.sign({ exp: Math.floor(Date.now() / 1000) - 5 }, apiConfig().JWT_SECRET, valid)],
+  ["for another audience", () => jwt.sign({}, apiConfig().JWT_SECRET, { ...valid, audience: "other-app", expiresIn: 900 })],
+  ["from another issuer", () => jwt.sign({}, apiConfig().JWT_SECRET, { ...valid, issuer: "evil", expiresIn: 900 })],
+  ["with no subject", () => jwt.sign({}, apiConfig().JWT_SECRET, { issuer: valid.issuer, audience: valid.audience, expiresIn: 900 })],
   ["using alg none (unsigned)", () => {
     const part = (o: object): string => Buffer.from(JSON.stringify(o)).toString("base64url");
     const now = Math.floor(Date.now() / 1000);

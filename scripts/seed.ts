@@ -9,7 +9,7 @@
 // locally, and whatever you choose for the hosted demo (the README lists the demo values).
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { config, isLocalDatabase } from "../src/config";
+import { dbConfig as config, isLocalDatabase } from "../src/config";
 import { isAmazonRds } from "../src/db/databaseGuard";
 import { pool } from "../src/db/db";
 import { BillService } from "../src/services/billService";

@@ -2,7 +2,7 @@
 // commented out in Program.cs: issuer, audience, lifetime and signature all checked).
 // Tokens are for subscribers only; the provider's systems use API keys instead.
 import jwt from "jsonwebtoken";
-import { config } from "../config";
+import { apiConfig } from "../config";
 
 const ALGORITHM = "HS256";
 
@@ -16,23 +16,23 @@ export interface IssuedToken {
 }
 
 export function issueToken(claims: SubscriberClaims): IssuedToken {
-  const accessToken = jwt.sign({}, config.JWT_SECRET, {
+  const accessToken = jwt.sign({}, apiConfig().JWT_SECRET, {
     algorithm: ALGORITHM,
     subject: claims.subscriberNo, // `sub`: who the token belongs to
-    issuer: config.JWT_ISSUER,
-    audience: config.JWT_AUDIENCE,
-    expiresIn: config.JWT_TTL_SECONDS,
+    issuer: apiConfig().JWT_ISSUER,
+    audience: apiConfig().JWT_AUDIENCE,
+    expiresIn: apiConfig().JWT_TTL_SECONDS,
   });
-  return { accessToken, expiresIn: config.JWT_TTL_SECONDS };
+  return { accessToken, expiresIn: apiConfig().JWT_TTL_SECONDS };
 }
 
 // Throws on a bad signature, wrong issuer/audience, expiry, or any algorithm but HS256
 // (pinning the algorithm blocks the classic "alg: none" forgery).
 export function verifyToken(token: string): SubscriberClaims {
-  const payload = jwt.verify(token, config.JWT_SECRET, {
+  const payload = jwt.verify(token, apiConfig().JWT_SECRET, {
     algorithms: [ALGORITHM],
-    issuer: config.JWT_ISSUER,
-    audience: config.JWT_AUDIENCE,
+    issuer: apiConfig().JWT_ISSUER,
+    audience: apiConfig().JWT_AUDIENCE,
     clockTolerance: 0, // like the teacher's ClockSkew = TimeSpan.Zero
   });
   if (typeof payload === "string" || typeof payload.sub !== "string" || payload.sub === "") {
