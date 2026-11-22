@@ -3,13 +3,19 @@ name = "billing-assistant"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.1",
     "anthropic>=2.12.0",
+    "psycopg[binary]>=3.3.9",
+    "pydantic-settings>=2.16.3",
+    "sqlalchemy>=2.1.9",
 ]
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
 src = ["src"]
+# Alembic revision files are generated, then frozen; don't lint them.
+extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "N", "C901", "ANN"]
