@@ -1,0 +1,36 @@
+{
+  "name": "billing-assistant",
+  "version": "1.0.0",
+  "description": "SE4458 Midterm: AI Billing Support Assistant (billing REST API, MCP server, agent)",
+  "private": true,
+  "license": "MIT",
+  "author": "Osman Sahin Guler",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc",
+    "migrate": "tsx --env-file=.env src/db/migrate.ts",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts"
+  },
+  "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
+    "express": "^5.3.0",
+    "pg": "^8.23.1",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/swagger-ui-express": "^4.1.8",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  // Type-checks everything (npm run typecheck). The build narrows this: see tsconfig.build.json
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+
+    // Node.js 24, CommonJS output (same as ts-api)
+    "module": "commonjs",
+    "target": "esnext",
+    "lib": ["esnext"],
+    "types": ["node"],
+
+    // Stricter type checking
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  },
+  "include": ["src", "test"]
+}

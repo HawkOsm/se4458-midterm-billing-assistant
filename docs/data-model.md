@@ -96,7 +96,7 @@ MCP server only reads it. Columns follow the output format the guide asks for in
 | ✅ 5 | Pay Bill treats `transactionId` as its idempotency key; a repeat with the same details replays the original result, a repeat with different details → 409 | No double charge on retries (class slide 31) |
 | ✅ 6 | Pay Bill locks the bill row (`SELECT … FOR UPDATE`) in one transaction | Two concurrent payments can't both pass the balance check (concurrency slide 32) |
 | ✅ 7 | Own `users` table + JWT; token `sub` = subscriber_no | Agent can only reach the logged-in subscriber's data |
-| ✅ 8 | Money as `NUMERIC(10,2)` → Python `Decimal` | Exact decimal amounts |
+| ✅ 8 | Money as `NUMERIC(10,2)`; integer cents in TypeScript, `"75.00"` strings in JSON | Exact amounts, no float rounding |
 
 ## Billing formulas (assignment + Mobile_Provider_Billing_Guide.md §2–4)
 
