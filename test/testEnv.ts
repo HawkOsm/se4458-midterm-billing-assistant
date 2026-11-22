@@ -6,3 +6,5 @@ process.env["POSTGRES_PORT"] ??= "5432";
 process.env["POSTGRES_USER"] ??= "billing";
 process.env["POSTGRES_PASSWORD"] ??= "billing_local_dev";
 process.env["POSTGRES_DB"] = "billing_test";
+// A fixed test-only signing secret (never used outside tests).
+process.env["JWT_SECRET"] = "test-only-secret-0123456789abcdefghijklmnop";
