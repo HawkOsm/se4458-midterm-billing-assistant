@@ -1,8 +1,9 @@
-import { OpenApiGeneratorV3 } from "@asteasolutions/zod-to-openapi";
-import { registry } from "./registry";
+import { OpenApiGeneratorV3, type OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
-// Call after the controllers are imported, so all routes are registered.
-export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3["generateDocument"]> {
+// Call after every controller has registered its routes on this registry.
+export function buildOpenApiDocument(
+  registry: OpenAPIRegistry,
+): ReturnType<OpenApiGeneratorV3["generateDocument"]> {
   return new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {

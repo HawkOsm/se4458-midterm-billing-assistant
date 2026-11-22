@@ -4,11 +4,13 @@
 // No cloud, network or LLM is needed: `docker compose up -d` is enough.
 import "./testEnv";
 import type { AddressInfo } from "node:net";
+import type { Express } from "express";
 import { Client, type PoolClient } from "pg";
 import { createApp } from "../src/app";
 import { config } from "../src/config";
 import { pool } from "../src/db/db";
 import { migrate } from "../src/db/migrate";
+import { hashPassword } from "../src/services/passwordHasher";
 
 const DUPLICATE_DATABASE = "42P04";
 
@@ -61,18 +63,45 @@ export async function beginTestTransaction(): Promise<TestTx> {
 
 // The real Express app on a random free port, using the test's transaction.
 export interface TestServer {
-  get: (path: string) => Promise<Response>;
+  get: (path: string, headers?: Record<string, string>) => Promise<Response>;
+  postJson: (path: string, body: unknown) => Promise<Response>;
   close: () => Promise<void>;
 }
 
 export async function startTestServer(client: PoolClient): Promise<TestServer> {
-  const server = createApp(client).listen(0);
+  return listen(createApp(client));
+}
+
+// Any Express app on a random free port (also used for middleware-only test apps).
+export async function listen(app: Express): Promise<TestServer> {
+  const server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const { port } = server.address() as AddressInfo;
+  const base = `http://127.0.0.1:${port}`;
   return {
-    get: (path) => fetch(`http://127.0.0.1:${port}${path}`),
+    get: (path, headers = {}) => fetch(base + path, { headers }),
+    postJson: (path, body) =>
+      fetch(base + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      }),
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
+}
+
+// A login for an existing subscriber, with a real scrypt hash.
+export async function insertUser(
+  client: PoolClient,
+  subscriberNo: string,
+  username: string,
+  password: string,
+): Promise<void> {
+  const subscriberId = await insertSubscriber(client, subscriberNo);
+  await client.query(
+    "INSERT INTO billing.users (subscriber_id, username, password_hash) VALUES ($1, $2, $3)",
+    [subscriberId, username, await hashPassword(password)],
+  );
 }
 
 // Test data: a subscriber and a stored bill (charges in "75.00" text, like NUMERIC).
