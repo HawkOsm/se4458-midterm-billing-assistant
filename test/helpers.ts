@@ -65,6 +65,7 @@ export async function beginTestTransaction(): Promise<TestTx> {
 
 // The real Express app on a random free port, using the test's transaction.
 export interface TestServer {
+  base: string; // http://127.0.0.1:<port>
   get: (path: string, headers?: Record<string, string>) => Promise<Response>;
   put: (path: string, headers?: Record<string, string>) => Promise<Response>;
   postJson: (path: string, body: unknown, headers?: Record<string, string>) => Promise<Response>;
@@ -82,6 +83,7 @@ export async function listen(app: Express): Promise<TestServer> {
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
   return {
+    base,
     get: (path, headers = {}) => fetch(base + path, { headers }),
     put: (path, headers = {}) => fetch(base + path, { method: "PUT", headers }),
     postJson: (path, body, headers = {}) =>
