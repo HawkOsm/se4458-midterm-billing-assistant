@@ -8,6 +8,7 @@ import { z } from "zod";
 //   dbConfig     database settings, no secrets beyond the DB password (every service)
 //   apiConfig()  + PORT and the JWT signing key (the billing API only)
 //   mcpConfig()  + MCP_PORT (the MCP server only; it never sees the JWT key)
+//   agentConfig() the AI agent: API and MCP addresses, the model and the Claude key (no DB)
 
 // Host names that mean "the Postgres on this machine": loopback, plus the names Docker
 // uses (`postgres` is our compose.yaml service, for when the API itself runs in compose).
@@ -45,7 +46,18 @@ const McpEnv = DbEnv.extend({
   MCP_PORT: z.coerce.number().int().positive().default(4000),
 });
 
+// The AI agent talks only to the billing API (via the gateway once deployed) and the MCP
+// server, never to the database, so it gets neither DB nor JWT settings.
+const AgentEnv = z.object({
+  AGENT_PORT: z.coerce.number().int().positive().default(5000),
+  API_BASE_URL: z.url().default("http://127.0.0.1:3000/api/v1"),
+  MCP_URL: z.url().default("http://127.0.0.1:4000/mcp"),
+  CLAUDE_MODEL: z.string().default("claude-haiku-5-5"),
+  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required for the agent"),
+});
+
 export type DbConfig = z.infer<typeof DbEnv>;
+export type AgentConfig = z.infer<typeof AgentEnv>;
 export type Config = z.infer<typeof ApiEnv>;
 export type McpConfig = z.infer<typeof McpEnv>;
 
@@ -82,6 +94,7 @@ export const dbConfig: DbConfig = parseDbConfig(process.env);
 
 let api: Config | undefined;
 let mcp: McpConfig | undefined;
+let agent: AgentConfig | undefined;
 
 // Read on first use and then kept: only the API needs (and gets) the JWT settings.
 export function apiConfig(): Config {
@@ -93,3 +106,9 @@ export function mcpConfig(): McpConfig {
   mcp ??= McpEnv.parse(process.env);
   return mcp;
 }
+
+export function agentConfig(): AgentConfig {
+  agent ??= AgentEnv.parse(process.env);
+  return agent;
+}
+
