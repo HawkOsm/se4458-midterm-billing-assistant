@@ -1,7 +1,7 @@
 // Bill business logic (like the teacher's services/todoService.js). Calls the DB contexts;
 // knows nothing about HTTP.
 import * as billDbContext from "../db/billDbContext";
-import type { Db } from "../db/db";
+import { withTransaction, type Db } from "../db/db";
 import * as usageEventDbContext from "../db/usageEventDbContext";
 import type { Bill } from "../domain/bill";
 import type { Page, UsageEvent } from "../domain/usageEvent";
@@ -21,6 +21,8 @@ export class BillService {
   }
 
   // The stored bill plus one page of the usage events it was calculated from.
+  // Both reads run in one REPEATABLE READ transaction, so a recalculation in between
+  // can't pair the old bill with the new event list.
   async getDetails(
     subscriberNo: string,
     year: number,
@@ -28,9 +30,15 @@ export class BillService {
     offset: number,
     limit: number,
   ): Promise<BillDetails | null> {
-    const bill = await this.get(subscriberNo, year, month);
-    if (!bill) return null;
-    const events = await usageEventDbContext.getEventsForBill(this.db, bill.id, offset, limit);
-    return { bill, events };
+    return withTransaction(
+      this.db,
+      async (tx) => {
+        const bill = await billDbContext.getBillForPeriod(tx, subscriberNo, year, month);
+        if (!bill) return null;
+        const events = await usageEventDbContext.getEventsForBill(tx, bill.id, offset, limit);
+        return { bill, events };
+      },
+      { isolation: "REPEATABLE READ", readOnly: true },
+    );
   }
 }

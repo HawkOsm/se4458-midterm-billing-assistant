@@ -1,7 +1,7 @@
 // Every pricing example stated in Mobile_Provider_Billing_Guide.md, checked literally.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { internetChargeCents, phoneChargeCents } from "../src/domain/pricing";
+import { MOB_BILLING_2026_01, getTariff, internetChargeCents, phoneChargeCents } from "../src/domain/pricing";
 
 test("phone: first 1,000 minutes free, then $10 per started 1,000-minute block (§2.1–2.2)", () => {
   assert.equal(phoneChargeCents(0), 0);
@@ -22,4 +22,10 @@ test("internet: $50 up to 20 GB, then $10 per started 10 GB block (§3.1–3.2)"
 
 test("worked example: 1,350 minutes + 35 GB = $80 (§4.3)", () => {
   assert.equal(phoneChargeCents(1350) + internetChargeCents(35_000), 8000);
+});
+
+test("bills are explained with the tariff they were calculated with", () => {
+  const tariff = getTariff("MOB-BILLING-2026-01");
+  assert.equal(tariff, MOB_BILLING_2026_01);
+  assert.throws(() => getTariff("NO-SUCH-TARIFF"), /Unknown tariff/);
 });

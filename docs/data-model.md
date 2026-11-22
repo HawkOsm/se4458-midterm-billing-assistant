@@ -17,6 +17,7 @@ erDiagram
     SUBSCRIBERS ||--o{ USAGE_EVENTS : records
     SUBSCRIBERS ||--o{ BILLS : "is billed"
     BILLS ||--o{ PAYMENTS : "is paid by"
+    BILLS |o--o{ USAGE_EVENTS : "counted in"
 
     SUBSCRIBERS {
         bigint id PK
@@ -28,7 +29,7 @@ erDiagram
         bigint id PK
         bigint subscriber_id FK,UK "1:1 with subscriber"
         varchar username UK
-        varchar password_hash "bcrypt"
+        varchar password_hash "scrypt (salted)"
         timestamptz created_at
     }
     USAGE_EVENTS {
@@ -40,6 +41,7 @@ erDiagram
         int amount "10 (minutes) or 1 (MB)"
         varchar idempotency_key "required, UK per subscriber"
         timestamptz created_at
+        bigint bill_id FK "set by Calculate Bill; NULL = not billed yet"
     }
     BILLS {
         bigint id PK
@@ -54,6 +56,7 @@ erDiagram
         numeric paid_amount "NUMERIC(10,2), default 0"
         varchar status "UNPAID | PARTIALLY_PAID | PAID"
         timestamptz calculated_at
+        varchar tariff_id "price list used, e.g. MOB-BILLING-2026-01"
     }
     PAYMENTS {
         bigint id PK
@@ -97,6 +100,8 @@ MCP server only reads it. Columns follow the output format the guide asks for in
 | ✅ 6 | Pay Bill locks the bill row (`SELECT … FOR UPDATE`) in one transaction | Two concurrent payments can't both pass the balance check (concurrency slide 32) |
 | ✅ 7 | Own `users` table + JWT; token `sub` = subscriber_no | Agent can only reach the logged-in subscriber's data |
 | ✅ 8 | Money as `NUMERIC(10,2)`; integer cents in TypeScript, `"75.00"` strings in JSON | Exact amounts, no float rounding |
+| ✅ 9 | Calculate Bill links the usage events it sums (`usage_events.bill_id`), in the same transaction | Query Bill Detailed lists exactly what the stored total counted; a timestamp filter was racy (migration 003) |
+| ✅ 10 | Each bill stores its `tariff_id` | An old bill is explained with the prices that produced it, even after a price change (migration 004) |
 
 ## Billing formulas (assignment + Mobile_Provider_Billing_Guide.md §2–4)
 

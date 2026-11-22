@@ -2,12 +2,11 @@
 import { UsageEvent, type Page, type UsageEventRow } from "../domain/usageEvent";
 import type { Db } from "./db";
 
-// One page of the events counted in a stored bill: same subscriber and period, recorded
-// no later than the bill's calculation (later usage isn't in its total). Newest first.
-//
-// One statement on purpose: the total and the page come from the same snapshot, so a
-// concurrent Add Usage can't make them disagree. The LEFT JOIN keeps one row (with the
-// total) even when the offset is past the end and the page is empty.
+// One page of the events a stored bill counted (Calculate Bill links them with bill_id),
+// newest first. Both parts are served straight from ix_usage_events_bill_id_created_at_id:
+// the count from the index, and the page by walking it in order and stopping after
+// offset + limit rows, instead of loading and sorting every event of the month.
+// The LEFT JOIN keeps one row (with the total) even when the offset is past the end.
 export async function getEventsForBill(
   db: Db,
   billId: number,
@@ -15,20 +14,14 @@ export async function getEventsForBill(
   limit: number,
 ): Promise<Page<UsageEvent>> {
   const { rows } = await db.query<{ total: string } & Partial<UsageEventRow>>(
-    `WITH counted AS (
-       SELECT e.id, e.usage_type, e.amount, e.created_at
-         FROM billing.usage_events e
-         JOIN billing.bills b
-           ON b.subscriber_id = e.subscriber_id
-          AND b.period_year = e.period_year
-          AND b.period_month = e.period_month
-        WHERE b.id = $1
-          AND e.created_at <= b.calculated_at
-     )
-     SELECT t.total, p.*
-       FROM (SELECT count(*) AS total FROM counted) t
+    `SELECT t.total, p.id, p.usage_type, p.amount, p.created_at
+       FROM (SELECT count(*) AS total FROM billing.usage_events WHERE bill_id = $1) t
        LEFT JOIN LATERAL (
-         SELECT * FROM counted ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3
+         SELECT id, usage_type, amount, created_at
+           FROM billing.usage_events
+          WHERE bill_id = $1
+          ORDER BY created_at DESC, id DESC
+          LIMIT $2 OFFSET $3
        ) p ON true`,
     [billId, limit, offset],
   );

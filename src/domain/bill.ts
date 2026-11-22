@@ -18,6 +18,7 @@ export interface BillRow {
   paid_amount: string;
   status: BillStatus;
   calculated_at: Date;
+  tariff_id: string;
 }
 
 export class Bill {
@@ -34,6 +35,7 @@ export class Bill {
     readonly paidCents: number,
     readonly status: BillStatus,
     readonly calculatedAt: Date,
+    readonly tariffId: string, // the price list this bill was calculated with
   ) {}
 
   static fromRow(row: BillRow): Bill {
@@ -50,6 +52,7 @@ export class Bill {
       toCents(row.paid_amount),
       row.status,
       row.calculated_at,
+      row.tariff_id,
     );
   }
 

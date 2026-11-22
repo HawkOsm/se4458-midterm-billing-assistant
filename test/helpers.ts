@@ -150,19 +150,28 @@ export async function insertBill(client: PoolClient, seed: BillSeed = {}): Promi
 }
 
 // `count` usage events for one period, recorded 1 second apart ending at
-// `endSecondsFromNow` (0 = the transaction's now(), which is also a new bill's calculated_at).
+// `endSecondsFromNow` seconds from the transaction's now(). With `billId`, the events are
+// linked to that bill, as Calculate Bill will do for the events it counts.
 export async function insertUsageEvents(
   client: PoolClient,
   subscriberNo: string,
-  usage: { year: number; month: number; type: "PHONE" | "INTERNET"; count: number; endSecondsFromNow?: number },
+  usage: {
+    year: number;
+    month: number;
+    type: "PHONE" | "INTERNET";
+    count: number;
+    endSecondsFromNow?: number;
+    billId?: number;
+  },
 ): Promise<void> {
   const subscriberId = await insertSubscriber(client, subscriberNo);
   await client.query(
     `INSERT INTO billing.usage_events
-       (subscriber_id, period_year, period_month, usage_type, amount, idempotency_key, created_at)
+       (subscriber_id, period_year, period_month, usage_type, amount, idempotency_key, created_at, bill_id)
      SELECT $1, $2, $3, $4::varchar, CASE WHEN $4::varchar = 'PHONE' THEN 10 ELSE 1 END,
             $7::text || g,
-            now() + make_interval(secs => $6::int - (g - 1))
+            now() + make_interval(secs => $6::int - (g - 1)),
+            $8::bigint
        FROM generate_series(1, $5::int) AS g`,
     [
       subscriberId,
@@ -172,7 +181,8 @@ export async function insertUsageEvents(
       usage.count,
       usage.endSecondsFromNow ?? 0,
       // unique per subscriber, like real Idempotency-Keys
-      `test-${usage.year}-${usage.month}-${usage.type}-${usage.endSecondsFromNow ?? 0}-`,
+      `test-${usage.year}-${usage.month}-${usage.type}-${usage.endSecondsFromNow ?? 0}-${usage.billId ?? "none"}-`,
+      usage.billId ?? null,
     ],
   );
 }

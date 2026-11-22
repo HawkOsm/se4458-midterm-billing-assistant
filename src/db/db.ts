@@ -16,3 +16,31 @@ export const pool = new Pool({
 // DB contexts accept this, so a service can pass a transaction client (Pay Bill) and
 // tests can pass a client whose transaction is rolled back afterwards.
 export type Db = Pool | PoolClient;
+
+export type IsolationLevel = "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
+
+// Runs `work` inside one transaction on one connection, so every query in it sees the
+// same data (REPEATABLE READ: one snapshot for the whole transaction) and writes are
+// all-or-nothing. Given the pool, it borrows a connection and owns BEGIN/COMMIT/ROLLBACK.
+// Given a client, the caller already owns the transaction (tests, nested service calls),
+// so `work` just runs on it.
+export async function withTransaction<T>(
+  db: Db,
+  work: (tx: Db) => Promise<T>,
+  options: { isolation?: IsolationLevel; readOnly?: boolean } = {},
+): Promise<T> {
+  if (!(db instanceof Pool)) return work(db);
+  const client = await db.connect();
+  try {
+    const mode = options.readOnly ? " READ ONLY" : "";
+    await client.query(`BEGIN ISOLATION LEVEL ${options.isolation ?? "READ COMMITTED"}${mode}`);
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined); // keep the original error
+    throw err;
+  } finally {
+    client.release();
+  }
+}

@@ -16,6 +16,7 @@ import {
 
 interface Details {
   total: string;
+  tariffId: string;
   remainingBalance: string;
   usage: { phoneMinutes: number; internetMb: number; internetGb: number };
   charges: {
@@ -49,8 +50,8 @@ const asAyse = { Authorization: `Bearer ${issueToken({ subscriberNo: AYSE }).acc
 const url = (query = "", no = AYSE): string => `/api/v1/subscribers/${no}/bills/2025/4/details${query}`;
 
 // The guide's worked example (§4.3): 1,350 minutes + 35 GB = $10 + $70 = $80.
-async function insertWorkedExampleBill(): Promise<void> {
-  await insertBill(tx.client, {
+async function insertWorkedExampleBill(): Promise<number> {
+  return insertBill(tx.client, {
     subscriberNo: AYSE,
     phoneMinutes: 1350,
     internetMb: 35_000,
@@ -74,11 +75,12 @@ test("returns the charge breakdown of the guide's worked example", async () => {
   assert.equal(body.charges.internet.baseCharge, "50.00");
   assert.equal(body.charges.internet.extraBlocks, 2);
   assert.equal(body.charges.internet.charge, "70.00");
+  assert.equal(body.tariffId, "MOB-BILLING-2026-01");
 });
 
 test("pages usage events newest first with offset and limit", async () => {
-  await insertWorkedExampleBill();
-  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "PHONE", count: 25 });
+  const billId = await insertWorkedExampleBill();
+  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "PHONE", count: 25, billId });
 
   const first = (await (await api.get(url("?limit=10"), asAyse)).json()) as Details;
   const last = (await (await api.get(url("?offset=20&limit=10"), asAyse)).json()) as Details;
@@ -100,8 +102,8 @@ test("pages usage events newest first with offset and limit", async () => {
 });
 
 test("defaults to offset 0 and limit 20", async () => {
-  await insertWorkedExampleBill();
-  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "INTERNET", count: 30 });
+  const billId = await insertWorkedExampleBill();
+  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "INTERNET", count: 30, billId });
 
   const body = (await (await api.get(url(), asAyse)).json()) as Details;
 
@@ -112,8 +114,8 @@ test("defaults to offset 0 and limit 20", async () => {
 });
 
 test("an offset past the end returns an empty page with the real total", async () => {
-  await insertWorkedExampleBill();
-  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "PHONE", count: 3 });
+  const billId = await insertWorkedExampleBill();
+  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "PHONE", count: 3, billId });
 
   const body = (await (await api.get(url("?offset=50"), asAyse)).json()) as Details;
 
@@ -121,10 +123,12 @@ test("an offset past the end returns an empty page with the real total", async (
   assert.equal(body.usageEvents.total, 3);
 });
 
-test("lists only usage recorded before the bill was calculated", async () => {
-  await insertWorkedExampleBill();
-  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "PHONE", count: 4 });
-  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "INTERNET", count: 2, endSecondsFromNow: 60 }); // after
+test("lists only the events the bill counted, not unbilled usage of the same month", async () => {
+  const billId = await insertWorkedExampleBill();
+  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "PHONE", count: 4, billId });
+  // Same period, recorded EARLIER than the counted ones but not linked: a timestamp
+  // filter would have listed these; the bill_id link doesn't.
+  await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 4, type: "INTERNET", count: 2, endSecondsFromNow: -60 });
   await insertUsageEvents(tx.client, AYSE, { year: 2025, month: 5, type: "PHONE", count: 7 }); // other month
 
   const body = (await (await api.get(url(), asAyse)).json()) as Details;

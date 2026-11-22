@@ -12,7 +12,7 @@ export const BillPeriodParams = z.object({
 export type BillPeriodParams = z.infer<typeof BillPeriodParams>;
 
 // Money is a string ("75.00") so no client parses it into a lossy float.
-const Money = z.string().regex(/^-?\d+\.\d{2}$/);
+export const Money = z.string().regex(/^-?\d+\.\d{2}$/);
 
 export const BillDto = z
   .object({
