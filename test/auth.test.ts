@@ -7,7 +7,6 @@ import { config } from "../src/config";
 import {
   beginTestTransaction,
   closePool,
-  insertAdmin,
   insertUser,
   prepareTestDatabase,
   startTestServer,
@@ -41,7 +40,6 @@ test("valid credentials return a 15-minute Bearer token for the subscriber", asy
 
   const claims = jwt.verify(body.accessToken, config.JWT_SECRET) as jwt.JwtPayload;
   assert.equal(claims.sub, "5551234");
-  assert.equal(claims["role"], "SUBSCRIBER");
   assert.equal(claims.iss, "billing-api");
   assert.equal(claims.aud, "billing-assistant");
   assert.equal(claims.exp! - claims.iat!, 900);
@@ -105,15 +103,3 @@ test("a second user named Ayse (different case) is rejected by the database", as
   );
   await tx.client.query("ROLLBACK TO SAVEPOINT dup");
 });
-
-test("the provider's admin logs in with role ADMIN and its username as subject", async () => {
-  await insertAdmin(tx.client, "ops", "admin-pass-123");
-
-  const res = await api.postJson("/api/v1/login", { username: "ops", password: "admin-pass-123" });
-  const claims = jwt.verify(((await res.json()) as { accessToken: string }).accessToken, config.JWT_SECRET) as jwt.JwtPayload;
-
-  assert.equal(res.status, 200);
-  assert.equal(claims.sub, "ops");
-  assert.equal(claims["role"], "ADMIN");
-});
-

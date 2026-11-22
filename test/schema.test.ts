@@ -125,17 +125,20 @@ test("a PHONE event must be whole 10-minute units", async () => {
   );
 });
 
-test("an admin login can't belong to a subscriber, and a subscriber login must", async () => {
-  const subscriberId = await insertSubscriber(tx.client, "5551234");
-  await assertRejectedBy(
-    "ck_users_role_subscriber",
-    "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES ($1, 'x', 'h', 'ADMIN')",
-    [subscriberId],
+test("API keys: names and hashes are unique, and a hash must be 64 hex characters", async () => {
+  const hash = "a".repeat(64);
+  await tx.client.query("INSERT INTO billing.api_keys (name, key_hash) VALUES ('collector', $1)", [hash]);
+  await assertRejectedBy("uq_api_keys_name", "INSERT INTO billing.api_keys (name, key_hash) VALUES ('collector', $1)", ["b".repeat(64)]);
+  await assertRejectedBy("uq_api_keys_key_hash", "INSERT INTO billing.api_keys (name, key_hash) VALUES ('other', $1)", [hash]);
+  await assertRejectedBy("ck_api_keys_key_hash_hex", "INSERT INTO billing.api_keys (name, key_hash) VALUES ('raw', $1)", ["the-plain-key".padEnd(64, "x")]);
+});
+
+test("every login belongs to a subscriber again (no admin logins)", async () => {
+  await tx.client.query("SAVEPOINT attempt");
+  await assert.rejects(
+    tx.client.query("INSERT INTO billing.users (subscriber_id, username, password_hash) VALUES (NULL, 'admin', 'h')"),
+    (err: { code?: string; column?: string }) => err.code === "23502" && err.column === "subscriber_id", // not_null_violation
   );
-  await assertRejectedBy(
-    "ck_users_role_subscriber",
-    "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, 'y', 'h', 'SUBSCRIBER')",
-  );
-  await assertRejectedBy("ck_users_role", "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, 'z', 'h', 'ROOT')");
+  await tx.client.query("ROLLBACK TO SAVEPOINT attempt");
 });
 

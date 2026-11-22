@@ -3,7 +3,7 @@
 import { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import express, { type NextFunction, type Request, type Response } from "express";
 import swaggerUi from "swagger-ui-express";
-import { ApiVersion, BEARER_AUTH } from "./controllers/apiVersion";
+import { API_KEY_AUTH, ApiVersion, BEARER_AUTH } from "./controllers/apiVersion";
 import { authController } from "./controllers/authController";
 import { billController } from "./controllers/billController";
 import { paymentController } from "./controllers/paymentController";
@@ -25,6 +25,9 @@ export function createApp(db: Db): express.Express {
     scheme: "bearer",
     bearerFormat: "JWT",
   });
+
+  // Lets Swagger's "Authorize" button send `X-API-Key: <key>` (the provider's systems).
+  registry.registerComponent("securitySchemes", API_KEY_AUTH, { type: "apiKey", in: "header", name: "X-API-Key" });
 
   // The ONLY place the version is written. A breaking change would add a second
   // ApiVersion("/api/v2", registry) with its own controllers, next to this one.

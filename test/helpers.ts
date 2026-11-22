@@ -11,6 +11,7 @@ import { createApp } from "../src/app";
 import { config } from "../src/config";
 import { pool } from "../src/db/db";
 import { migrate } from "../src/db/migrate";
+import { hashApiKey } from "../src/services/apiKeyService";
 import { hashPassword } from "../src/services/passwordHasher";
 
 const DUPLICATE_DATABASE = "42P04";
@@ -189,11 +190,10 @@ export async function insertUsageEvents(
   );
 }
 
-// The provider's admin login (role ADMIN, no subscriber).
-export async function insertAdmin(client: PoolClient, username: string, password: string): Promise<void> {
-  await client.query(
-    "INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, $1, $2, 'ADMIN')",
-    [username, await hashPassword(password)],
-  );
-}
+// A provider API key for tests (only its hash is stored, like the real ones).
+export const TEST_PROVIDER_KEY = "pk_test-provider-key-0123456789abcdefghij";
+export const PROVIDER_HEADERS: Record<string, string> = { "X-API-Key": TEST_PROVIDER_KEY };
 
+export async function insertApiKey(client: PoolClient, name = "test-provider", key = TEST_PROVIDER_KEY): Promise<void> {
+  await client.query("INSERT INTO billing.api_keys (name, key_hash) VALUES ($1, $2)", [name, hashApiKey(key)]);
+}

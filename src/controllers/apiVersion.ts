@@ -10,6 +10,7 @@ type Method = "get" | "post" | "put" | "patch" | "delete";
 export type RouteDocs = Omit<RouteConfig, "method" | "path">;
 
 export const BEARER_AUTH = "bearerAuth";
+export const API_KEY_AUTH = "apiKey";
 
 export class ApiVersion {
   readonly router = Router();

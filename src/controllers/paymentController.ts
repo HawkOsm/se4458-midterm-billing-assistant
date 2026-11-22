@@ -1,16 +1,19 @@
 // Pay Bill endpoint.
+import * as apiKeyDbContext from "../db/apiKeyDbContext";
 import type { Db } from "../db/db";
 import { formatCents } from "../domain/money";
 import { formatPeriod } from "../domain/period";
 import { BillPeriodParams } from "../dto/billDto";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
 import { PayBillRequest, PaymentDto, parseAmountCents, toPaymentDto } from "../dto/paymentDto";
-import { requireAuth, requireOwnAccount } from "../middleware/auth";
+import { authenticate, requireOwnAccount } from "../middleware/auth";
 import { PaymentService } from "../services/paymentService";
 import { BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
 
 export function paymentController(api: ApiVersion, db: Db): void {
   const service = new PaymentService(db);
+  // Subscribers log in (JWT); the provider's systems send an API key.
+  const auth = authenticate((keyHash) => apiKeyDbContext.findActiveKeyName(db, keyHash));
 
   api.route(
     "post",
@@ -30,7 +33,7 @@ export function paymentController(api: ApiVersion, db: Db): void {
         201: { description: "Payment accepted (or the replay of an earlier identical call)", content: json(PaymentDto) },
         400: { description: "Invalid path or body (amount must be positive, at most 2 decimals)", content: json(ErrorDto) },
         401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
-        403: { description: "Not the subscriber's own token (admins can't pay for a subscriber)", content: json(ErrorDto) },
+        403: { description: "Not the subscriber's own token (a provider key can't pay for a subscriber)", content: json(ErrorDto) },
         404: { description: "Unknown subscriber, or no bill calculated for the month", content: json(ErrorDto) },
         409: {
           description:
@@ -40,7 +43,7 @@ export function paymentController(api: ApiVersion, db: Db): void {
         422: { description: "Amount exceeds the remaining balance, or the bill is already fully paid", content: json(ErrorDto) },
       },
     },
-    requireAuth,
+    auth,
     requireOwnAccount,
     async (req, res) => {
       const { subscriberNo, year, month } = parseOrThrow(BillPeriodParams, req.params);

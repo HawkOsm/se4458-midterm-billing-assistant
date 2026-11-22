@@ -5,8 +5,10 @@ import { randomUUID } from "node:crypto";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { issueToken } from "../src/services/tokenService";
 import {
+  PROVIDER_HEADERS,
   beginTestTransaction,
   closePool,
+  insertApiKey,
   insertBill,
   insertUsageEvents,
   prepareTestDatabase,
@@ -34,7 +36,7 @@ let tx: TestTx;
 let api: TestServer;
 
 const AYSE = "5551234";
-const token = (no: string): string => `Bearer ${issueToken({ role: "SUBSCRIBER", subscriberNo: no }).accessToken}`;
+const token = (no: string): string => `Bearer ${issueToken({ subscriberNo: no }).accessToken}`;
 const billUrl = (no = AYSE, year = 2025, month = 4): string => `/api/v1/subscribers/${no}/bills/${year}/${month}`;
 
 before(prepareTestDatabase);
@@ -44,6 +46,7 @@ beforeEach(async () => {
   api = await startTestServer(tx.client);
   // April 2025: the guide's worked example, $10 phone + $70 internet = $80.
   await insertBill(tx.client, { subscriberNo: AYSE, phoneCharge: "10.00", internetCharge: "70.00" });
+  await insertApiKey(tx.client);
 });
 afterEach(async () => {
   await api.close();
@@ -196,20 +199,20 @@ test("after a payment the month is locked for recalculation and new usage", asyn
   const usage = await api.postJson(
     `/api/v1/subscribers/${AYSE}/usage`,
     { year: 2025, month: 4, usageType: "PHONE" },
-    { Authorization: `Bearer ${issueToken({ role: "ADMIN", username: "admin" }).accessToken}`, "Idempotency-Key": randomUUID() },
+    { ...PROVIDER_HEADERS, "Idempotency-Key": randomUUID() },
   );
 
   assert.equal(recalc.status, 409);
   assert.equal(usage.status, 409);
 });
 
-test("the provider's admin can't pay for a subscriber (403)", async () => {
+test("a provider key can't pay for a subscriber (403)", async () => {
   const res = await api.postJson(`${billUrl()}/payments`, { transactionId: randomUUID(), amount: "10.00" }, {
-    Authorization: `Bearer ${issueToken({ role: "ADMIN", username: "admin" }).accessToken}`,
+    ...PROVIDER_HEADERS,
   });
 
   assert.equal(res.status, 403);
-  assert.deepEqual(await res.json(), { error: "Only the subscriber can do this, not an admin" });
+  assert.deepEqual(await res.json(), { error: "Only the subscriber can do this" });
   assert.equal(await paymentCount(), 0);
 });
 

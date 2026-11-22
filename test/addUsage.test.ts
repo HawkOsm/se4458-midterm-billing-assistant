@@ -8,6 +8,8 @@ import { UsageService } from "../src/services/usageService";
 import {
   beginTestTransaction,
   closePool,
+  PROVIDER_HEADERS,
+  insertApiKey,
   insertBill,
   insertSubscriber,
   prepareTestDatabase,
@@ -32,9 +34,8 @@ let tx: TestTx;
 let api: TestServer;
 
 const AYSE = "5551234";
-const token = (no: string): string => `Bearer ${issueToken({ role: "SUBSCRIBER", subscriberNo: no }).accessToken}`;
-// Usage is recorded by the provider (admin), never by the customer (migration 006).
-const ADMIN = `Bearer ${issueToken({ role: "ADMIN", username: "admin" }).accessToken}`;
+const token = (no: string): string => `Bearer ${issueToken({ subscriberNo: no }).accessToken}`;
+// Usage is recorded by the provider's systems (API key), never by the customer.
 const url = (no = AYSE): string => `/api/v1/subscribers/${no}/usage`;
 
 before(prepareTestDatabase);
@@ -43,15 +44,16 @@ beforeEach(async () => {
   tx = await beginTestTransaction();
   api = await startTestServer(tx.client);
   await insertSubscriber(tx.client, AYSE);
+  await insertApiKey(tx.client);
 });
 afterEach(async () => {
   await api.close();
   await tx.rollback();
 });
 
-// POST as the admin for subscriber `no`, with the given key (a fresh one unless passed).
+// POST with the provider's API key for subscriber `no`, and the given Idempotency-Key.
 function addUsage(body: unknown, key: string | null = randomUUID(), no = AYSE): Promise<Response> {
-  const headers: Record<string, string> = { Authorization: ADMIN };
+  const headers: Record<string, string> = { ...PROVIDER_HEADERS };
   if (key !== null) headers["Idempotency-Key"] = key;
   return api.postJson(url(no), body, headers);
 }
@@ -216,7 +218,7 @@ test("without a token returns 401", async () => {
   assert.equal(res.status, 401);
 });
 
-test("a subscriber can't record usage, not even their own (403): only the provider's admin can", async () => {
+test("a subscriber can't record usage, not even their own (403): only the provider's systems can", async () => {
   for (const auth of [token(AYSE), token("5559999")]) {
     const res = await api.postJson(url(), { ...april, usageType: "PHONE" }, {
       Authorization: auth,
@@ -224,12 +226,12 @@ test("a subscriber can't record usage, not even their own (403): only the provid
     });
 
     assert.equal(res.status, 403);
-    assert.deepEqual(await res.json(), { error: "Only the provider's admin can do this" });
+    assert.deepEqual(await res.json(), { error: "Only the provider's systems can do this (X-API-Key)" });
   }
   assert.equal(await countEvents(), 0);
 });
 
-test("the admin recording usage for a subscriber that doesn't exist gets 404", async () => {
+test("the provider recording usage for a subscriber that doesn't exist gets 404", async () => {
   const res = await addUsage({ ...april, usageType: "PHONE" }, randomUUID(), "0000000");
 
   assert.equal(res.status, 404);
@@ -246,4 +248,14 @@ test("a retry is replayed even where the clock still says an earlier month", asy
 
   assert.equal(first.kind, "recorded");
   assert.deepEqual(retry.kind === "recorded" && retry.replayed, true);
+});
+
+test("a revoked provider key is refused (401) by the real key lookup", async () => {
+  await tx.client.query("UPDATE billing.api_keys SET revoked_at = now()");
+
+  const res = await addUsage({ ...april, usageType: "PHONE" });
+
+  assert.equal(res.status, 401);
+  assert.deepEqual(await res.json(), { error: "Invalid or revoked API key" });
+  assert.equal(await countEvents(), 0);
 });

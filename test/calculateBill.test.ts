@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { issueToken } from "../src/services/tokenService";
 import {
+  PROVIDER_HEADERS,
   beginTestTransaction,
   closePool,
+  insertApiKey,
   insertSubscriber,
   insertUsageEvents,
   prepareTestDatabase,
@@ -46,7 +48,7 @@ afterEach(async () => {
 
 const AYSE = "5551234";
 const auth = (no: string): Record<string, string> => ({
-  Authorization: `Bearer ${issueToken({ role: "SUBSCRIBER", subscriberNo: no }).accessToken}`,
+  Authorization: `Bearer ${issueToken({ subscriberNo: no }).accessToken}`,
 });
 const asAyse = auth(AYSE);
 const billUrl = (year = 2025, month = 4, no = AYSE): string => `/api/v1/subscribers/${no}/bills/${year}/${month}`;
@@ -230,8 +232,9 @@ test("usage too large to bill is refused with 422 and nothing is linked", async 
   assert.equal((await api.get(billUrl())).status, 404, "no bill was stored");
 });
 
-test("the provider's admin can calculate any subscriber's bill", async () => {
-  const admin = { Authorization: `Bearer ${issueToken({ role: "ADMIN", username: "admin" }).accessToken}` };
+test("the provider's key can calculate any subscriber's bill", async () => {
+  await insertApiKey(tx.client);
+  const admin = PROVIDER_HEADERS;
 
   const res = await api.put(billUrl(), admin);
 

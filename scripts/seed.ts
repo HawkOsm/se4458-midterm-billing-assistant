@@ -5,14 +5,15 @@
 // a month that was already paid is left as it is.
 //
 // Lives in scripts/, not src/, so it is never compiled into dist/ or the Docker image.
-// Passwords come from the environment, never from this file: .env locally, and
-// whatever you choose for the hosted demo (the README lists the demo logins).
+// Passwords and the provider key come from the environment, never from this file: .env
+// locally, and whatever you choose for the hosted demo (the README lists the demo values).
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { config, isLocalDatabase } from "../src/config";
 import { isAmazonRds } from "../src/db/databaseGuard";
 import { pool } from "../src/db/db";
 import { BillService } from "../src/services/billService";
+import { hashApiKey } from "../src/services/apiKeyService";
 import { hashPassword } from "../src/services/passwordHasher";
 
 const SUBSCRIBERS = [
@@ -20,8 +21,8 @@ const SUBSCRIBERS = [
   { subscriberNo: "5559999", fullName: "Mehmet Kaya", username: "mehmet", passwordEnv: "SEED_PASSWORD_MEHMET" },
 ] as const;
 
-// The provider's operator: records usage and calculates bills for any subscriber.
-const ADMIN = { username: "admin", passwordEnv: "SEED_PASSWORD_ADMIN" } as const;
+// The provider's demo system key: records usage and calculates bills for any subscriber.
+const PROVIDER_KEY = { name: "provider-demo", env: "SEED_PROVIDER_API_KEY" } as const;
 
 // Usage for the assignment's example questions ("What is my October bill?", "Why is my
 // October bill higher?"). Each entry is `rows` events of `amount` (minutes or MB) each.
@@ -47,10 +48,11 @@ function assertSafeTarget(): void {
   throw new Error(`Refusing to seed ${config.POSTGRES_HOST}: not a local database. ${REMOTE_HINT}`);
 }
 
-// Every password must be set; report all missing names at once.
-function readPasswords(): Record<string, string> {
-  const names = [...SUBSCRIBERS.map((a) => a.passwordEnv), ADMIN.passwordEnv];
-  const shape = Object.fromEntries(names.map((name) => [name, z.string().min(8, "at least 8 characters")]));
+// Every password and the key must be set; report all missing names at once.
+function readSecrets(): Record<string, string> {
+  const passwords = SUBSCRIBERS.map((a) => [a.passwordEnv, z.string().min(8, "at least 8 characters")] as const);
+  const key = [PROVIDER_KEY.env, z.string().min(32, "at least 32 characters")] as const;
+  const shape = Object.fromEntries([...passwords, key]);
   const result = z.object(shape).safeParse(process.env);
   if (!result.success) {
     const problems = result.error.issues.map((i) => `${i.path.join(".")} (${i.message})`);
@@ -68,16 +70,17 @@ async function seedAccounts(client: PoolClient, passwords: Record<string, string
       [account.subscriberNo, account.fullName],
     );
     await client.query(
-      `INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES ($1, $2, $3, 'SUBSCRIBER')
+      `INSERT INTO billing.users (subscriber_id, username, password_hash) VALUES ($1, $2, $3)
        ON CONFLICT (subscriber_id) DO UPDATE
          SET username = EXCLUDED.username, password_hash = EXCLUDED.password_hash`,
       [rows[0]!.id, account.username, await hashPassword(passwords[account.passwordEnv]!)],
     );
   }
+  // Only the hash is stored; a changed key in .env replaces the old one (and un-revokes it).
   await client.query(
-    `INSERT INTO billing.users (subscriber_id, username, password_hash, role) VALUES (NULL, $1, $2, 'ADMIN')
-     ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'ADMIN', subscriber_id = NULL`,
-    [ADMIN.username, await hashPassword(passwords[ADMIN.passwordEnv]!)],
+    `INSERT INTO billing.api_keys (name, key_hash) VALUES ($1, $2)
+     ON CONFLICT (name) DO UPDATE SET key_hash = EXCLUDED.key_hash, revoked_at = NULL`,
+    [PROVIDER_KEY.name, hashApiKey(passwords[PROVIDER_KEY.env]!)],
   );
 }
 
@@ -114,7 +117,7 @@ async function calculateDemoBills(): Promise<string[]> {
 
 async function main(): Promise<void> {
   assertSafeTarget();
-  const passwords = readPasswords();
+  const passwords = readSecrets();
   const client = await pool.connect();
   let added: number;
   try {
@@ -133,7 +136,7 @@ async function main(): Promise<void> {
     client.release();
   }
   const bills = await calculateDemoBills();
-  console.log(`Seeded on ${config.POSTGRES_HOST}: users ${[...SUBSCRIBERS.map((a) => a.username), ADMIN.username].join(", ")}`);
+  console.log(`Seeded on ${config.POSTGRES_HOST}: users ${SUBSCRIBERS.map((a) => a.username).join(", ")}; API key ${PROVIDER_KEY.name}`);
   console.log(`Demo usage: ${added} new events. Bills:\n  ${bills.join("\n  ")}`);
 }
 

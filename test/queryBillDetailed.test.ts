@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { issueToken } from "../src/services/tokenService";
 import {
+  PROVIDER_HEADERS,
   beginTestTransaction,
   closePool,
+  insertApiKey,
   insertBill,
   insertUsageEvents,
   prepareTestDatabase,
@@ -46,7 +48,7 @@ afterEach(async () => {
 });
 
 const AYSE = "5551234";
-const asAyse = { Authorization: `Bearer ${issueToken({ role: "SUBSCRIBER", subscriberNo: AYSE }).accessToken}` };
+const asAyse = { Authorization: `Bearer ${issueToken({ subscriberNo: AYSE }).accessToken}` };
 const url = (query = "", no = AYSE): string => `/api/v1/subscribers/${no}/bills/2025/4/details${query}`;
 
 // The guide's worked example (§4.3): 1,350 minutes + 35 GB = $10 + $70 = $80.
@@ -147,7 +149,7 @@ test("without a token returns 401", async () => {
 
 test("another subscriber's token returns 403, even though the bill exists", async () => {
   await insertWorkedExampleBill();
-  const asMehmet = { Authorization: `Bearer ${issueToken({ role: "SUBSCRIBER", subscriberNo: "5559999" }).accessToken}` };
+  const asMehmet = { Authorization: `Bearer ${issueToken({ subscriberNo: "5559999" }).accessToken}` };
 
   const res = await api.get(url(), asMehmet);
 
@@ -179,9 +181,10 @@ for (const [query, field] of [
   });
 }
 
-test("the provider's admin can read any subscriber's detailed bill", async () => {
+test("the provider's key can read any subscriber's detailed bill", async () => {
   await insertWorkedExampleBill();
-  const admin = { Authorization: `Bearer ${issueToken({ role: "ADMIN", username: "admin" }).accessToken}` };
+  await insertApiKey(tx.client);
+  const admin = PROVIDER_HEADERS;
 
   const res = await api.get(url(), admin);
 

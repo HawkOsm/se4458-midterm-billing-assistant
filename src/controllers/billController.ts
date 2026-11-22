@@ -1,13 +1,14 @@
 // Bill endpoints (like the teacher's Controllers/TodoItemsController.cs).
 // HTTP concerns only: validate input, call the service, map the result to a status code.
+import * as apiKeyDbContext from "../db/apiKeyDbContext";
 import type { Db } from "../db/db";
 import { BillDetailsDto, PageQuery, toBillDetailsDto } from "../dto/billDetailsDto";
 import { BillDto, BillPeriodParams, toBillDto } from "../dto/billDto";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
-import { requireAuth, requireOwnAccountOrAdmin } from "../middleware/auth";
+import { authenticate, requireOwnAccountOrProvider } from "../middleware/auth";
 import { formatPeriod, futurePeriodMessage } from "../domain/period";
 import { BillService } from "../services/billService";
-import { BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
+import { API_KEY_AUTH, BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
 
 function noBill(subscriberNo: string, year: number, month: number): DtoError {
   return new DtoError(`No bill for ${subscriberNo} in ${formatPeriod(year, month)}`, 404);
@@ -15,6 +16,8 @@ function noBill(subscriberNo: string, year: number, month: number): DtoError {
 
 export function billController(api: ApiVersion, db: Db): void {
   const service = new BillService(db);
+  // Subscribers log in (JWT); the provider's systems send an API key.
+  const auth = authenticate((keyHash) => apiKeyDbContext.findActiveKeyName(db, keyHash));
 
   api.route(
     "get",
@@ -46,19 +49,19 @@ export function billController(api: ApiVersion, db: Db): void {
       summary: "Query Bill Detailed",
       description:
         "The stored bill with usage, charge breakdown, and a page of the usage events it was " +
-        "calculated from (newest first). Requires the subscriber's own token, or the provider's admin.",
-      security: [{ [BEARER_AUTH]: [] }],
+        "calculated from (newest first). The subscriber's own token, or a provider API key.",
+      security: [{ [BEARER_AUTH]: [] }, { [API_KEY_AUTH]: [] }], // either one
       request: { params: BillPeriodParams, query: PageQuery },
       responses: {
         200: { description: "The bill breakdown and one page of usage events", content: json(BillDetailsDto) },
         400: { description: "Invalid path or paging parameters", content: json(ErrorDto) },
         401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
-        403: { description: "The token belongs to another subscriber (and isn't an admin)", content: json(ErrorDto) },
+        403: { description: "Another subscriber's token", content: json(ErrorDto) },
         404: { description: "No bill has been calculated for this period", content: json(ErrorDto) },
       },
     },
-    requireAuth,
-    requireOwnAccountOrAdmin,
+    auth,
+    requireOwnAccountOrProvider,
     async (req, res) => {
       const { subscriberNo, year, month } = parseOrThrow(BillPeriodParams, req.params);
       const { offset, limit } = parseOrThrow(PageQuery, req.query);
@@ -77,22 +80,22 @@ export function billController(api: ApiVersion, db: Db): void {
       description:
         "Calculates the month's bill from its recorded usage (guide §4.2) and stores it. " +
         "PUT because it is idempotent: repeating it updates the same bill. Allowed until the " +
-        "bill's first payment. Requires the subscriber's own token (to see the month so far), or the provider's admin.",
-      security: [{ [BEARER_AUTH]: [] }],
+        "bill's first payment. The subscriber's own token (to see the month so far), or a provider API key (the billing run).",
+      security: [{ [BEARER_AUTH]: [] }, { [API_KEY_AUTH]: [] }], // either one
       request: { params: BillPeriodParams },
       responses: {
         201: { description: "Bill created", content: json(BillDto) },
         200: { description: "Bill recalculated (unchanged if no new usage)", content: json(BillDto) },
         400: { description: "Invalid path, or a month that hasn't started yet", content: json(ErrorDto) },
         401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
-        403: { description: "The token belongs to another subscriber (and isn't an admin)", content: json(ErrorDto) },
+        403: { description: "Another subscriber's token", content: json(ErrorDto) },
         404: { description: "Unknown subscriber", content: json(ErrorDto) },
         409: { description: "The bill already has payments and is locked", content: json(ErrorDto) },
         422: { description: "The month's usage is too large to bill", content: json(ErrorDto) },
       },
     },
-    requireAuth,
-    requireOwnAccountOrAdmin,
+    auth,
+    requireOwnAccountOrProvider,
     async (req, res) => {
       const { subscriberNo, year, month } = parseOrThrow(BillPeriodParams, req.params);
       const period = formatPeriod(year, month);

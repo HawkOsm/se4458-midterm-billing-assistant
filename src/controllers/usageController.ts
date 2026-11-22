@@ -1,14 +1,17 @@
 // Add Usage endpoint.
+import * as apiKeyDbContext from "../db/apiKeyDbContext";
 import type { Db } from "../db/db";
 import { formatPeriod, futurePeriodMessage } from "../domain/period";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
 import { AddUsageRequest, IdempotencyHeaders, UsagePathParams, UsageRecordDto, toUsageRecordDto } from "../dto/usageDto";
-import { requireAdmin, requireAuth } from "../middleware/auth";
+import { authenticate, requireProvider } from "../middleware/auth";
 import { UsageService } from "../services/usageService";
-import { BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
+import { API_KEY_AUTH, json, type ApiVersion } from "./apiVersion";
 
 export function usageController(api: ApiVersion, db: Db): void {
   const service = new UsageService(db);
+  // Subscribers log in (JWT); the provider's systems send an API key.
+  const auth = authenticate((keyHash) => apiKeyDbContext.findActiveKeyName(db, keyHash));
 
   api.route(
     "post",
@@ -20,8 +23,8 @@ export function usageController(api: ApiVersion, db: Db): void {
         "Records usage for a month: each PHONE unit is 10 minutes, each INTERNET unit is 1 MB " +
         "(guide §2.3, §3.3). Requires an Idempotency-Key header: a retry with the same key and " +
         "body returns the original response (header Idempotent-Replayed: true) and records nothing. " +
-        "Provider side: requires the admin's token (usage comes from the network, not from the customer).",
-      security: [{ [BEARER_AUTH]: [] }],
+        "Provider side: requires a provider API key (usage comes from the network, not from the customer).",
+      security: [{ [API_KEY_AUTH]: [] }],
       request: {
         params: UsagePathParams,
         headers: IdempotencyHeaders,
@@ -31,13 +34,13 @@ export function usageController(api: ApiVersion, db: Db): void {
         201: { description: "Recorded (or the replay of an earlier identical call)", content: json(UsageRecordDto) },
         400: { description: "Invalid body, missing Idempotency-Key, or a month that hasn't started", content: json(ErrorDto) },
         401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
-        403: { description: "Not an admin token", content: json(ErrorDto) },
+        403: { description: "A subscriber token (only the provider records usage)", content: json(ErrorDto) },
         404: { description: "Unknown subscriber", content: json(ErrorDto) },
         409: { description: "Key reused with a different body, or the month's bill already has payments", content: json(ErrorDto) },
       },
     },
-    requireAuth,
-    requireAdmin,
+    auth,
+    requireProvider,
     async (req, res) => {
       const { subscriberNo } = parseOrThrow(UsagePathParams, req.params);
       const { "idempotency-key": key } = parseOrThrow(IdempotencyHeaders, req.headers);
