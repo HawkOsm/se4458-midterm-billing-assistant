@@ -3,6 +3,7 @@
 // inside a transaction that is rolled back, so tests never see each other's data.
 // No cloud, network or LLM is needed: `docker compose up -d` is enough.
 import "./testEnv";
+import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { Client, type PoolClient } from "pg";
@@ -64,6 +65,7 @@ export async function beginTestTransaction(): Promise<TestTx> {
 // The real Express app on a random free port, using the test's transaction.
 export interface TestServer {
   get: (path: string, headers?: Record<string, string>) => Promise<Response>;
+  put: (path: string, headers?: Record<string, string>) => Promise<Response>;
   postJson: (path: string, body: unknown) => Promise<Response>;
   close: () => Promise<void>;
 }
@@ -80,6 +82,7 @@ export async function listen(app: Express): Promise<TestServer> {
   const base = `http://127.0.0.1:${port}`;
   return {
     get: (path, headers = {}) => fetch(base + path, { headers }),
+    put: (path, headers = {}) => fetch(base + path, { method: "PUT", headers }),
     postJson: (path, body) =>
       fetch(base + path, {
         method: "POST",
@@ -180,8 +183,7 @@ export async function insertUsageEvents(
       usage.type,
       usage.count,
       usage.endSecondsFromNow ?? 0,
-      // unique per subscriber, like real Idempotency-Keys
-      `test-${usage.year}-${usage.month}-${usage.type}-${usage.endSecondsFromNow ?? 0}-${usage.billId ?? "none"}-`,
+      `test-${randomUUID()}-`, // unique per call, like real Idempotency-Keys
       usage.billId ?? null,
     ],
   );

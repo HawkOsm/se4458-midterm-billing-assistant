@@ -49,10 +49,9 @@ test("every documented route is versioned under /api/v1", async () => {
 test("every documented route is actually served by the app", async () => {
   for (const { method, path } of await documentedRoutes()) {
     const url = path.replace(/\{\w+\}/g, "1"); // placeholder for each path parameter
+    // Each documented method is sent as itself; any body: we only care that a route answers.
     const res =
-      method === "get"
-        ? await api.get(url)
-        : await api.postJson(url, {}); // any body: we only care that a route answers
+      method === "get" ? await api.get(url) : method === "put" ? await api.put(url) : await api.postJson(url, {});
     const body = (await res.json()) as { error?: string };
 
     // The app's catch-all 404 means "no such route". Anything else (200, 400, 401,
