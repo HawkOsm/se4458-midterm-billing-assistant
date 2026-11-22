@@ -4,6 +4,7 @@
 // place (app.ts), so routes and docs can't drift apart when a /api/v2 is added.
 import type { OpenAPIRegistry, RouteConfig } from "@asteasolutions/zod-to-openapi";
 import { Router, type RequestHandler } from "express";
+import type { ZodType } from "zod";
 
 type Method = "get" | "post" | "put" | "patch" | "delete";
 export type RouteDocs = Omit<RouteConfig, "method" | "path">;
@@ -28,4 +29,9 @@ export class ApiVersion {
 // "/a/{id}/b" -> "/a/:id/b" (Express 5 path syntax)
 export function toExpressPath(openApiPath: string): string {
   return openApiPath.replace(/\{(\w+)\}/g, ":$1");
+}
+
+// A JSON body/response entry for route docs: json(BillDto) instead of the nested literal.
+export function json(schema: ZodType): { "application/json": { schema: ZodType } } {
+  return { "application/json": { schema } };
 }

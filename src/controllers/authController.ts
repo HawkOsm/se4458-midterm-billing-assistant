@@ -3,7 +3,7 @@ import type { Db } from "../db/db";
 import { LoginRequest, TokenDto } from "../dto/authDto";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
 import { AuthService } from "../services/authService";
-import type { ApiVersion } from "./apiVersion";
+import { json, type ApiVersion } from "./apiVersion";
 
 export function authController(api: ApiVersion, db: Db): void {
   const service = new AuthService(db);
@@ -15,11 +15,11 @@ export function authController(api: ApiVersion, db: Db): void {
       tags: ["Auth"],
       summary: "Log in",
       description: "Exchange username and password for a JWT (valid 15 minutes).",
-      request: { body: { content: { "application/json": { schema: LoginRequest } } } },
+      request: { body: { content: json(LoginRequest) } },
       responses: {
-        200: { description: "Logged in", content: { "application/json": { schema: TokenDto } } },
-        400: { description: "Missing or invalid fields", content: { "application/json": { schema: ErrorDto } } },
-        401: { description: "Wrong username or password", content: { "application/json": { schema: ErrorDto } } },
+        200: { description: "Logged in", content: json(TokenDto) },
+        400: { description: "Missing or invalid fields", content: json(ErrorDto) },
+        401: { description: "Wrong username or password", content: json(ErrorDto) },
       },
     },
     async (req, res) => {

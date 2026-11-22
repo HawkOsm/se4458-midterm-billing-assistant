@@ -6,11 +6,7 @@ import { BillDto, BillPeriodParams, toBillDto } from "../dto/billDto";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
 import { requireAuth, requireOwnAccount } from "../middleware/auth";
 import { BillService } from "../services/billService";
-import { BEARER_AUTH, type ApiVersion } from "./apiVersion";
-
-const json = (schema: typeof ErrorDto | typeof BillDto | typeof BillDetailsDto) => ({
-  "application/json": { schema },
-});
+import { BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
 
 function noBill(subscriberNo: string, year: number, month: number): DtoError {
   const period = `${year}-${String(month).padStart(2, "0")}`;
@@ -29,9 +25,9 @@ export function billController(api: ApiVersion, db: Db): void {
       description: "Bill total, paid amount, remaining balance and status. No authentication (per spec).",
       request: { params: BillPeriodParams },
       responses: {
-        200: { description: "The stored bill", content: { "application/json": { schema: BillDto } } },
-        400: { description: "Invalid subscriber number, year or month", content: { "application/json": { schema: ErrorDto } } },
-        404: { description: "No bill has been calculated for this period", content: { "application/json": { schema: ErrorDto } } },
+        200: { description: "The stored bill", content: json(BillDto) },
+        400: { description: "Invalid subscriber number, year or month", content: json(ErrorDto) },
+        404: { description: "No bill has been calculated for this period", content: json(ErrorDto) },
       },
     },
     async (req, res) => {
