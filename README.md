@@ -23,6 +23,8 @@ npm run dev                 # http://localhost:3000
 ```
 
 Other commands: `npm test`, `npm run typecheck`, `npm run build` and `npm start` (the compiled app).
+The MCP documentation server: `npm run mcp` (stdio) or `npm run mcp:http` (http://localhost:4000/mcp);
+see [MCP server](#mcp-server).
 
 ## Demo accounts
 
@@ -226,8 +228,8 @@ npm test
 ```
 
 ```
-ℹ tests 164
-ℹ pass 164
+ℹ tests 178
+ℹ pass 178
 ℹ fail 0
 ```
 
@@ -242,10 +244,48 @@ database: 10 simultaneous $10 payments on a $50 bill gave exactly 5 payments and
 (paid $50.00); without the row lock the same run reported 10 payments while the bill showed only
 $20.00. Ten identical retries of a payment or a usage report always produced one row.
 
+## MCP server
+
+A real MCP server (official TypeScript SDK) with one tool over the billing guide, kept
+separate from the billing API and the gateway, as the assignment's architecture requires. It
+follows the instructor's `MCP` example (an indexed document, keyword search, a stdio server)
+and adds an HTTP transport so it can be deployed as its own service.
+
+| | |
+| --- | --- |
+| Tool | `search_billing_documentation(query, limit = 3)` |
+| Input | `query`: text, 1–500 characters; `limit`: 1–10 sections |
+| Output | `{ query, matches: [{ document, documentId, section, heading, text }], note }` (the format the guide asks for in §9), as JSON text and as structured content |
+| Transports | stdio: `npm run mcp` (the client starts it); Streamable HTTP: `npm run mcp:http`, `POST /mcp`, stateless (any instance can answer any request), `GET /health` |
+| Secrets | only the database settings: it never receives the API's JWT key |
+
+**Indexing:** `documents/Mobile_Provider_Billing_Guide.md` is split into one chunk per numbered
+section (25: §1, 2.1–8.4, §9), each keeping its section number, heading and document ID, and
+stored in PostgreSQL (`docs` schema) with a full-text index: English stemming, so "blocks" finds
+"block", and the heading weighted above the body. The server indexes when it starts and rebuilds
+only when the parsed sections change (an edited guide, or a parser that cuts it differently), so
+the index is ready before the first question and never rebuilt per question.
+
+**Search:** the query is reduced to plain words (anything else is dropped, so input can never
+become search syntax), a section needs only one of them, and results are ranked first by how
+many different query words a section contains, then by PostgreSQL's relevance score. Without
+that first step a word found almost everywhere ("bill") made §4.4 *Bill generation* outrank the
+exact answer. It is keyword search, not embeddings: a question phrased without the guide's words
+can miss (for "What does the AI assistant need before paying?" the right §5.2 comes second).
+
+Three retrieval tests (the real answers from the running server, top 2 sections):
+
+| Question | Sections returned |
+| --- | --- |
+| How much does extra internet cost? | §8.1 What is the cost of extra internet?, §3.2 Additional internet blocks |
+| Can I pay only part of my bill? | §8.3 Can I pay only part of my bill?, §5.3 Payment result |
+| When is my bill due and what happens if I pay late? | §6.2 Late payment reminder, §6.1 Due date |
+
+They are also automated tests (`test/mcp.test.ts`), together with hostile queries, the rebuild
+rules, and real MCP clients over both transports.
+
 ## Not done yet
 
-- **MCP server:** `search_billing_documentation(query)` over the billing guide, one indexed chunk
-  per numbered section with PostgreSQL full-text search; tool schema and three retrieval tests.
 - **AI agent:** chat that lets Claude choose the billing API, the MCP tool or both; the three
   scenarios (MCP only, API only, combined) and a confirmed payment; LLM cost notes.
 - **API Gateway:** gateway URL, route mappings, a protected route, an error example and
