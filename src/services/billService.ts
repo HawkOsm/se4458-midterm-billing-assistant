@@ -2,9 +2,20 @@
 // knows nothing about HTTP.
 import * as billDbContext from "../db/billDbContext";
 import { withTransaction, type Db } from "../db/db";
+import * as subscriberDbContext from "../db/subscriberDbContext";
 import * as usageEventDbContext from "../db/usageEventDbContext";
 import type { Bill } from "../domain/bill";
+import { formatCents } from "../domain/money";
+import { isFuturePeriod } from "../domain/period";
+import { CURRENT_TARIFF, internetChargeCents, phoneChargeCents } from "../domain/pricing";
 import type { Page, UsageEvent } from "../domain/usageEvent";
+
+// What Calculate Bill can end in. The controller maps each to an HTTP status.
+export type CalculateResult =
+  | { kind: "created" | "recalculated"; bill: Bill }
+  | { kind: "locked" } // the bill has payments (decision 2)
+  | { kind: "noSubscriber" }
+  | { kind: "futurePeriod" };
 
 export interface BillDetails {
   bill: Bill;
@@ -40,5 +51,35 @@ export class BillService {
       },
       { isolation: "REPEATABLE READ", readOnly: true },
     );
+  }
+
+  // Calculates and stores the period's bill from its usage (guide §4.2, §4.4). Safe to
+  // repeat: one bill per subscriber and month, updated in place until its first payment.
+  // Everything happens in one transaction, so a failure leaves no half-calculated bill
+  // and no events linked to a bill that wasn't saved.
+  async calculate(subscriberNo: string, year: number, month: number, now = new Date()): Promise<CalculateResult> {
+    if (isFuturePeriod(year, month, now)) return { kind: "futurePeriod" };
+
+    return withTransaction(this.db, async (tx): Promise<CalculateResult> => {
+      const subscriberId = await subscriberDbContext.findSubscriberId(tx, subscriberNo);
+      if (subscriberId === null) return { kind: "noSubscriber" };
+
+      const claim = await billDbContext.claimBillForCalculation(tx, subscriberId, year, month);
+      if (!claim) return { kind: "locked" };
+
+      await billDbContext.linkUnbilledEvents(tx, claim.billId, subscriberId, year, month);
+      const usage = await billDbContext.sumBilledUsage(tx, claim.billId);
+
+      const phoneCents = phoneChargeCents(usage.phoneMinutes, CURRENT_TARIFF);
+      const internetCents = internetChargeCents(usage.internetMb, CURRENT_TARIFF);
+      const bill = await billDbContext.saveCalculatedBill(tx, claim.billId, {
+        ...usage,
+        phoneCharge: formatCents(phoneCents),
+        internetCharge: formatCents(internetCents),
+        total: formatCents(phoneCents + internetCents),
+        tariffId: CURRENT_TARIFF.id,
+      });
+      return { kind: claim.inserted ? "created" : "recalculated", bill };
+    });
   }
 }

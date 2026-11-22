@@ -137,3 +137,7 @@ Rows marked *assumption* are not stated in either document and go into the READM
 | 4 | Add Usage for a period whose bill is locked (has a payment) → 409 | *assumption* — follows from settled decision 2 (bills lock after first payment); prevents unbilled usage |
 | 5 | Pay Bill for a period with no stored bill → 404 "calculate the bill first" | guide §4.4: bills are produced by Calculate Bill and an estimate must not be treated as a stored bill |
 | 6 | Bill status: `UNPAID` (paid = 0), `PARTIALLY_PAID` (0 < paid < total), `PAID` (paid = total) | guide §5.1 "a partial payment … does not mark the bill fully paid" |
+| 7 | Calculate Bill is `PUT` on the bill (idempotent upsert): 201 when created, 200 when recalculated, 409 once the bill has a payment | settled decisions 1–2; course idempotency slides (PUT is idempotent) |
+| 8 | Calculate Bill refuses months that haven't started yet (400); the current month is allowed and can be recalculated until paid | *assumption* — otherwise a future month gets a real-looking $50 bill (guide §3.1 charges the base with zero usage) |
+| 9 | Billing months are judged in UTC | *assumption* — the documents name no time zone |
+| 10 | Recalculating with no new usage leaves the bill unchanged, including its issue date (`calculated_at`) | guide §7.1: the issue date starts the 15-day dispute window, so a no-op must not move it |

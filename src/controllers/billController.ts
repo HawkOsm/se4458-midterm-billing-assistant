@@ -5,12 +5,12 @@ import { BillDetailsDto, PageQuery, toBillDetailsDto } from "../dto/billDetailsD
 import { BillDto, BillPeriodParams, toBillDto } from "../dto/billDto";
 import { DtoError, ErrorDto, parseOrThrow } from "../dto/dtoError";
 import { requireAuth, requireOwnAccount } from "../middleware/auth";
+import { formatPeriod } from "../domain/period";
 import { BillService } from "../services/billService";
 import { BEARER_AUTH, json, type ApiVersion } from "./apiVersion";
 
 function noBill(subscriberNo: string, year: number, month: number): DtoError {
-  const period = `${year}-${String(month).padStart(2, "0")}`;
-  return new DtoError(`No bill for ${subscriberNo} in ${period}`, 404);
+  return new DtoError(`No bill for ${subscriberNo} in ${formatPeriod(year, month)}`, 404);
 }
 
 export function billController(api: ApiVersion, db: Db): void {
@@ -65,6 +65,52 @@ export function billController(api: ApiVersion, db: Db): void {
       const details = await service.getDetails(subscriberNo, year, month, offset, limit);
       if (!details) throw noBill(subscriberNo, year, month);
       res.json(toBillDetailsDto(details.bill, subscriberNo, details.events));
+    },
+  );
+
+  api.route(
+    "put",
+    "/subscribers/{subscriberNo}/bills/{year}/{month}",
+    {
+      tags: ["Bills"],
+      summary: "Calculate Bill",
+      description:
+        "Calculates the month's bill from its recorded usage (guide §4.2) and stores it. " +
+        "PUT because it is idempotent: repeating it updates the same bill. Allowed until the " +
+        "bill's first payment. Requires the subscriber's own token.",
+      security: [{ [BEARER_AUTH]: [] }],
+      request: { params: BillPeriodParams },
+      responses: {
+        201: { description: "Bill created", content: json(BillDto) },
+        200: { description: "Bill recalculated (unchanged if no new usage)", content: json(BillDto) },
+        400: { description: "Invalid path, or a month that hasn't started yet", content: json(ErrorDto) },
+        401: { description: "Missing, invalid or expired token", content: json(ErrorDto) },
+        403: { description: "The token belongs to another subscriber", content: json(ErrorDto) },
+        404: { description: "Unknown subscriber", content: json(ErrorDto) },
+        409: { description: "The bill already has payments and is locked", content: json(ErrorDto) },
+      },
+    },
+    requireAuth,
+    requireOwnAccount,
+    async (req, res) => {
+      const { subscriberNo, year, month } = parseOrThrow(BillPeriodParams, req.params);
+      const period = formatPeriod(year, month);
+      const result = await service.calculate(subscriberNo, year, month);
+      switch (result.kind) {
+        case "futurePeriod":
+          throw new DtoError(`${period} has not started yet; only past or current months can be billed`, 400);
+        case "noSubscriber":
+          throw new DtoError(`Unknown subscriber ${subscriberNo}`, 404);
+        case "locked":
+          throw new DtoError(`The ${period} bill already has payments and can no longer be recalculated`, 409);
+        case "created":
+          // Where the new bill can be read: the same URL, with GET (Query Bill).
+          res.status(201).location(req.originalUrl).json(toBillDto(result.bill, subscriberNo));
+          return;
+        case "recalculated":
+          res.json(toBillDto(result.bill, subscriberNo));
+          return;
+      }
     },
   );
 }
