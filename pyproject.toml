@@ -1,0 +1,31 @@
+[project]
+name = "billing-assistant"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N", "C901", "ANN"]
+
+[tool.ruff.lint.mccabe]
+# Flag errors (`C901`) whenever the complexity level exceeds 5.
+max-complexity = 5
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "ruff>=0.17.6",
+]
