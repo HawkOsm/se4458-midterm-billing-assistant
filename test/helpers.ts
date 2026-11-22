@@ -113,6 +113,8 @@ export interface BillSeed {
   internetCharge?: string;
   paidAmount?: string;
   status?: "UNPAID" | "PARTIALLY_PAID" | "PAID";
+  phoneMinutes?: number;
+  internetMb?: number;
 }
 
 export async function insertSubscriber(client: PoolClient, subscriberNo: string): Promise<number> {
@@ -130,7 +132,7 @@ export async function insertBill(client: PoolClient, seed: BillSeed = {}): Promi
   const { rows } = await client.query<{ id: string }>(
     `INSERT INTO billing.bills (subscriber_id, period_year, period_month, phone_minutes,
          internet_mb, phone_charge, internet_charge, total, paid_amount, status)
-     VALUES ($1, $2, $3, 0, 0, $4::numeric, $5::numeric, $4::numeric + $5::numeric, $6, $7)
+     VALUES ($1, $2, $3, $8, $9, $4::numeric, $5::numeric, $4::numeric + $5::numeric, $6, $7)
      RETURNING id`,
     [
       subscriberId,
@@ -140,7 +142,37 @@ export async function insertBill(client: PoolClient, seed: BillSeed = {}): Promi
       seed.internetCharge ?? "50.00",
       seed.paidAmount ?? "0.00",
       seed.status ?? "UNPAID",
+      seed.phoneMinutes ?? 0,
+      seed.internetMb ?? 0,
     ],
   );
   return Number(rows[0]!.id);
+}
+
+// `count` usage events for one period, recorded 1 second apart ending at
+// `endSecondsFromNow` (0 = the transaction's now(), which is also a new bill's calculated_at).
+export async function insertUsageEvents(
+  client: PoolClient,
+  subscriberNo: string,
+  usage: { year: number; month: number; type: "PHONE" | "INTERNET"; count: number; endSecondsFromNow?: number },
+): Promise<void> {
+  const subscriberId = await insertSubscriber(client, subscriberNo);
+  await client.query(
+    `INSERT INTO billing.usage_events
+       (subscriber_id, period_year, period_month, usage_type, amount, idempotency_key, created_at)
+     SELECT $1, $2, $3, $4::varchar, CASE WHEN $4::varchar = 'PHONE' THEN 10 ELSE 1 END,
+            $7::text || g,
+            now() + make_interval(secs => $6::int - (g - 1))
+       FROM generate_series(1, $5::int) AS g`,
+    [
+      subscriberId,
+      usage.year,
+      usage.month,
+      usage.type,
+      usage.count,
+      usage.endSecondsFromNow ?? 0,
+      // unique per subscriber, like real Idempotency-Keys
+      `test-${usage.year}-${usage.month}-${usage.type}-${usage.endSecondsFromNow ?? 0}-`,
+    ],
+  );
 }
