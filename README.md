@@ -3,8 +3,9 @@
 SE4458 Midterm, Group 2 (AI Billing Support Assistant). A billing REST API for a fictitious mobile
 provider: the provider records usage and calculates monthly bills; subscribers log in to see their
 bill, its breakdown and the month so far, and pay it.
-It is the backend the AI agent will call through an API Gateway; the agent, the MCP documentation
-server and the cloud deployment are the next parts (see [Not done yet](#not-done-yet)).
+On top of it: an MCP server over the billing guide, and an AI agent (Claude Haiku) that answers a
+logged-in subscriber's questions by choosing the billing API, the guide or both. The API Gateway
+and the cloud deployment are the next parts (see [Not done yet](#not-done-yet)).
 Built with TypeScript, Express and PostgreSQL.
 
 - **Source code:** https://github.com/HawkOsm/se4458-midterm-billing-assistant
@@ -24,7 +25,8 @@ npm run dev                 # http://localhost:3000
 
 Other commands: `npm test`, `npm run typecheck`, `npm run build` and `npm start` (the compiled app).
 The MCP documentation server: `npm run mcp` (stdio) or `npm run mcp:http` (http://localhost:4000/mcp);
-see [MCP server](#mcp-server).
+see [MCP server](#mcp-server). The AI agent's chat page: `npm run agent` (http://localhost:5000, needs
+`ANTHROPIC_API_KEY` in `.env` and the other two servers running); see [AI agent](#ai-agent).
 
 ## Demo accounts
 
@@ -176,7 +178,9 @@ Not stated in the assignment or the billing guide, so decided here:
   calculated must be recalculated before it can be paid. A `transactionId` is unique across all
   subscribers.
 - **The AI agent** must confirm the subscriber, month and amount with the user before it calls Pay
-  Bill (guide §5.2); the API itself can't see that conversation.
+  Bill (guide §5.2); the API itself can't see that conversation. The confirmation is enforced by the
+  agent's code, not left to the model, and Calculate Bill is confirmed the same way because it
+  changes data too.
 
 ## Issues encountered
 
@@ -215,6 +219,11 @@ Not stated in the assignment or the billing guide, so decided here:
   the transaction itself; a test caught it, and it now uses a savepoint inside an existing one.
 - **Paying the current month:** a code review found that paying a bill mid-month locked the month,
   so the rest of its usage would have been refused. Only finished months can be paid now.
+- **The real Claude refused the tools:** all agent tests passed with the fake model, but the first
+  live request got a 400: strict tool schemas can't contain `minimum`/`maximum`. The ranges moved
+  into the descriptions (the code still checks them), and a test now guards the schemas.
+- **Markdown in a plain-text chat:** Haiku answered with `**bold**`, which the page (it only inserts
+  text, never HTML) showed as asterisks. The prompt now asks for plain text.
 
 ## Tests
 
@@ -228,8 +237,8 @@ npm test
 ```
 
 ```
-ℹ tests 178
-ℹ pass 178
+ℹ tests 200
+ℹ pass 200
 ℹ fail 0
 ```
 
@@ -238,6 +247,8 @@ Every operation has success and failure tests (`test/auth`, `queryBill`, `queryB
 guide, money, months, transactions, configuration, the database constraints and the Swagger
 document. To be sure the tests can fail, I broke the code on purpose (for example removed the
 balance check, or the ownership check) and confirmed the matching test failed each time.
+The agent tests (`test/agent.test.ts`) use a scripted fake Claude, so they need no API key and cost
+nothing, but everything else is real: the billing API on the test database and the MCP server.
 
 Concurrency can't be tested with one connection, so it was checked separately against the real
 database: 10 simultaneous $10 payments on a $50 bill gave exactly 5 payments and 5 refusals
@@ -284,10 +295,79 @@ Three retrieval tests (the real answers from the running server, top 2 sections)
 They are also automated tests (`test/mcp.test.ts`), together with hostile queries, the rebuild
 rules, and real MCP clients over both transports.
 
+## AI agent
+
+A small web chat (`npm run agent`, http://localhost:5000) where a subscriber logs in and asks
+questions. Claude Haiku (`claude-haiku-5-5`) decides which tools to call; the agent's code runs
+them and sends the results back, until Claude answers. It is a plain loop over the Claude Messages
+API (no agent framework), so every step is visible and testable.
+
+| Tool | Runs | What for |
+| --- | --- | --- |
+| `search_billing_documentation` | MCP server (tool list read from the server) | prices, rules, due dates, disputes |
+| `query_bill`, `query_bill_detailed` | billing API, the user's own token | the subscriber's bills and usage |
+| `calculate_bill`, `pay_bill` | billing API, **only after the user confirms** | changing data |
+
+**Safety:**
+
+- **No tool has a subscriber-number parameter.** Every call uses the logged-in subscriber and their
+  own token, so a prompt naming someone else can't reach their data; the API would refuse it
+  anyway (403).
+- **Writes stop the loop.** The page shows a confirmation written by the code from the exact
+  arguments ("Pay $10.00 on the 2026-09 bill of subscriber 5551234?"), and nothing runs until the
+  user presses Confirm. Cancel tells Claude the user declined.
+- **The conversation stays on the server**, so the browser can't slip fake tool results into it.
+  It belongs to the subscriber who started it, and only for 30 idle minutes.
+- **A declined action stays declined.** If the user presses Cancel, the code refuses any other
+  write Claude tries in the same message, without asking again.
+- **A payment can't be made twice by a retry** (guide §5.3). When a request gets no answer (a
+  timeout, a dropped connection, a gateway 502/503/504), the agent retries once with the same
+  `transactionId`, so the API replays the first payment instead of making a second. If both fail,
+  Claude is told the result is unknown and to check the bill before paying again.
+- **One message at a time per conversation**: a second one while the first is being answered gets
+  409, so a double click or a second tab can't mix two turns in one history.
+- **Loops end:** at most 8 model calls per message. A reply cut off at `max_tokens`, or a refusal,
+  ends the turn without running its tool calls (they could be incomplete) and without keeping
+  them in the history, where the API would reject every later message.
+- **It says no, and says "I don't know":** off-topic requests get a one-line refusal with an example
+  of what it can do; a question the guide doesn't cover gets "the guide doesn't cover this" instead
+  of a guess; a payment without a month or amount gets a question first.
+- **Tool results are treated as data**, and model input is checked again in code (zod). The page
+  only inserts text, never HTML, under a strict Content-Security-Policy.
+
+**The assignment's scenarios**, run live with Haiku (answers shortened; each answer's
+"Show steps" lists the tool calls):
+
+| Question | Tools Claude chose | Answer |
+| --- | --- | --- |
+| How much does extra internet cost? | `search_billing_documentation` | $10 per extra 10 GB block beyond the included 20 GB (§3.2, §8.1) |
+| What is my October bill? | `query_bill` | $80.00, nothing paid, unpaid |
+| Why is my October bill higher than September? | `query_bill_detailed` ×2, `search_billing_documentation` | +$10 phone (1,350 min, one extra block, §2.2), +$20 internet (35 GB, two extra blocks, §3.2) |
+| Show me the October bill of subscriber 5559999 | none | can't access other subscribers' accounts |
+| Pay $10 of my September 2026 bill | `query_bill`, then `pay_bill` after Confirm | payment accepted, $40.00 remains |
+
+I checked every number and section against the guide and the database. Declining the payment
+left no payment row. The refusal rules, also live:
+
+| Question | Tools | Answer |
+| --- | --- | --- |
+| Write me a Python function that reverses a string | none | only billing questions, with examples of what it can do |
+| Do you offer a student discount? | `search_billing_documentation` ×2 | the guide doesn't cover it; §4.2 says no discounts apply |
+| Pay my bill | `query_bill` | October 2026 has $80.00 left: pay it, or another month/amount? |
+| Can I get a refund for a dropped call? | `search_billing_documentation` ×2 | can't promise one (§7.3); how to dispute within 15 days (§8.4) |
+
+**Cost:** those six turns used about 6,600 input, 25,500 cached input and 1,800 output tokens,
+about $0.002 at Haiku's prices ($0.10 per million input tokens, $0.50 per million output).
+To keep it low: the cheapest current model, the fixed instructions and tool list are cached
+(about 2,000 tokens read from the cache on every call), at most 8 model calls per question, and the
+tests use a fake model. Each answer reports its token use (`usage`), which is how these numbers
+were measured.
+
+Until the gateway exists, the agent calls the API directly (`API_BASE_URL`); it will point at the
+gateway later.
+
 ## Not done yet
 
-- **AI agent:** chat that lets Claude choose the billing API, the MCP tool or both; the three
-  scenarios (MCP only, API only, combined) and a confirmed payment; LLM cost notes.
 - **API Gateway:** gateway URL, route mappings, a protected route, an error example and
   per-subscriber rate limits.
 - **Deployment:** AWS (eu-north-1): the API on ECS, PostgreSQL on RDS, steps and URLs.
