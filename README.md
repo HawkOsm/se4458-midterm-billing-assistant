@@ -4,10 +4,14 @@ SE4458 Midterm, Group 2 (AI Billing Support Assistant). A billing REST API for a
 provider: the provider records usage and calculates monthly bills; subscribers log in to see their
 bill, its breakdown and the month so far, and pay it.
 On top of it: an MCP server over the billing guide, and an AI agent (Claude Haiku) that answers a
-logged-in subscriber's questions by choosing the billing API, the guide or both. The API Gateway
-and the cloud deployment are the next parts (see [Not done yet](#not-done-yet)).
+logged-in subscriber's questions by choosing the billing API, the guide or both. Everything runs
+on AWS (eu-north-1) behind an API Gateway: see [Deployment](#deployment).
 Built with TypeScript, Express and PostgreSQL.
 
+- **AI agent (chat page):** https://bi-b64790aca077475db74fde98548c2894.ecs.eu-north-1.on.aws/
+- **API Gateway:** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1
+- **Swagger (through the gateway):** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api-docs/
+- **MCP server:** https://bi-814046f5580045559bc8c2452688e657.ecs.eu-north-1.on.aws/mcp
 - **Source code:** https://github.com/HawkOsm/se4458-midterm-billing-assistant
 - **Swagger page (local):** http://localhost:3000/api-docs/ (raw spec: `/openapi.json`)
 - **Data model, decisions and business rules:** [docs/data-model.md](docs/data-model.md)
@@ -224,6 +228,17 @@ Not stated in the assignment or the billing guide, so decided here:
   into the descriptions (the code still checks them), and a test now guards the schemas.
 - **Markdown in a plain-text chat:** Haiku answered with `**bold**`, which the page (it only inserts
   text, never HTML) showed as asterisks. The prompt now asks for plain text.
+- **Express Mode's defaults are large:** 1 vCPU, 2 GB and up to 20 tasks per service, about four
+  times the cost needed here. The service files set 0.25 vCPU, 0.5 GB and exactly one task.
+- **First ECS call on a new account:** creating the cluster failed with "Unable to assume the
+  service linked role". The failed call had just created the role; the retry worked.
+- **Database firewall before the services exist:** Express Mode creates each service's security
+  group, so they can't be named in the database's rules in advance, but the database had to be
+  ready (migrated) before the services start. RDS first accepted connections from inside the VPC,
+  then, once the services were up, only from their security groups (read from the running tasks:
+  the service description doesn't list them).
+- **TLS to RDS:** Node doesn't trust Amazon's RDS certificate authority, so verified TLS failed
+  until the image got Amazon's public eu-north-1 bundle (`certs/`, via `NODE_EXTRA_CA_CERTS`).
 
 ## Tests
 
@@ -237,8 +252,8 @@ npm test
 ```
 
 ```
-ℹ tests 200
-ℹ pass 200
+ℹ tests 211
+ℹ pass 211
 ℹ fail 0
 ```
 
@@ -363,14 +378,79 @@ To keep it low: the cheapest current model, the fixed instructions and tool list
 tests use a fake model. Each answer reports its token use (`usage`), which is how these numbers
 were measured.
 
-Until the gateway exists, the agent calls the API directly (`API_BASE_URL`); it will point at the
-gateway later.
+**Spending cap:** the demo logins are public, so the hosted agent allows 40 messages a day per
+subscriber and 400 in total (messages and confirmations both count; 429 after that). A request
+refused for another reason uses no quota.
+
+## Deployment
+
+On AWS in eu-north-1, deployed with the AWS CLI/API and JSON files like the instructor's
+`apiNode` (ECS Express Mode). The files, the full resource list, the order of the steps and the
+teardown are in [deploy/README.md](deploy/README.md).
+
+```
+ browser ──> AI agent (ECS) ──> Claude Haiku (Anthropic API)
+                 │  └─────────> MCP server (ECS) ──┐
+                 v                                 │
+            API Gateway (HTTP API) ──> billing API (ECS) ──> PostgreSQL (RDS)
+```
+
+- **One Docker image** for the three services; each ECS Express service starts it with its own
+  command. A separate `tools` image runs the migrations and the demo data once, as an ECS task.
+- **The database** (RDS PostgreSQL 17) is not public: only the API's and the MCP server's
+  security groups can reach it, over TLS that is verified against Amazon's RDS certificates.
+- **Secrets** (DB password, JWT key, gateway secret, provider key, Claude key) are in Secrets
+  Manager and injected by ECS; none is in the image or the repository.
+- **Cost:** about $2.7 a day while it runs (prices from the AWS price list).
+
+**API Gateway.** One route forwards everything to the billing API:
+
+| Gateway | Billing API |
+| --- | --- |
+| `ANY https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/{proxy+}` | `ANY /{proxy}` (`/api/v1/...`, `/api-docs/`, `/openapi.json`) |
+
+- It adds a secret header (`X-Gateway-Secret`), overwriting any value a client sends. The API
+  refuses requests without it, so the API's own URL can't be used to skip the gateway:
+
+  ```
+  $ curl https://bi-81ea5e0803f04b8c8caba86a5fb8524f.ecs.eu-north-1.on.aws/api/v1/subscribers/5551234/bills/2026/10
+  {"error":"Use the API Gateway URL"}                                   (403)
+  ```
+- It throttles to 10 requests a second (bursts of 20), for all callers together; the per-subscriber
+  limit is the agent's daily cap above.
+
+A public route, a protected one, and the errors:
+
+```
+GW=https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1
+
+curl $GW/subscribers/5551234/bills/2026/10                 # Query Bill (public)
+{"subscriberNo":"5551234","year":2026,"month":10,"total":"80.00","paidAmount":"0.00","remainingBalance":"80.00","status":"UNPAID","estimate":false}
+
+curl $GW/subscribers/5551234/bills/2026/10/details         # protected, no token: 401
+{"error":"Missing or malformed Authorization header (expected: Bearer <token>)"}
+
+TOKEN=$(curl -s -X POST $GW/login -H "Content-Type: application/json" \
+  -d '{"username":"ayse","password":"Demo-Ayse-2025"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).accessToken')
+curl -H "Authorization: Bearer $TOKEN" $GW/subscribers/5551234/bills/2026/10/details   # 200
+curl -H "Authorization: Bearer $TOKEN" $GW/subscribers/5559999/bills/2026/10/details   # 403
+{"error":"You can only access your own account"}
+```
+
+The hosted demo uses the same demo logins (ayse / mehmet). Its provider API key is private, not
+the public one above; it is in Secrets Manager:
+`aws secretsmanager get-secret-value --secret-id billing/provider-api-key --query SecretString --output text`.
+
+**Checked on AWS:**
+- The migration job applied all 8 migrations and seeded the same bills ($50 / $80 / $70).
+- The API answers through the gateway and refuses direct calls.
+- The MCP server answers `search_billing_documentation`.
+- The agent answered "Why is my October bill higher than September?" with real tool calls
+  through the gateway and the MCP server, explained the late-payment rules from §6, and stopped
+  a $10 payment at the confirmation (declined, nothing paid).
 
 ## Not done yet
 
-- **API Gateway:** gateway URL, route mappings, a protected route, an error example and
-  per-subscriber rate limits.
-- **Deployment:** AWS (eu-north-1): the API on ECS, PostgreSQL on RDS, steps and URLs.
 - **Redis cache** for Query Bill (Redis already runs in `compose.yaml`, unused so far).
 - **Demo video** and screenshots.
 
