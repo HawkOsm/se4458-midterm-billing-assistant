@@ -47,8 +47,8 @@ erDiagram
         bigint subscriber_id FK
         smallint period_year
         smallint period_month "UK with subscriber_id"
-        int phone_minutes
-        int internet_mb
+        bigint phone_minutes
+        bigint internet_mb
         numeric phone_charge "NUMERIC(10,2)"
         numeric internet_charge "NUMERIC(10,2)"
         numeric total "NUMERIC(10,2)"

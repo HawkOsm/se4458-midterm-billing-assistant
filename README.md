@@ -16,7 +16,7 @@ Built with TypeScript, Express and PostgreSQL.
 - **Swagger page (local):** http://localhost:3000/api-docs/ (raw spec: `/openapi.json`)
 - **OpenAPI specification file:** [docs/openapi.json](docs/openapi.json) (OpenAPI 3.0.3, written
   from the code by `npm run openapi`; a test fails if it differs from what the API serves)
-- **Data model, decisions and business rules:** [docs/data-model.md](docs/data-model.md)
+- **ER diagram:** [below](#data-model-er-diagram); decisions and business rules: [docs/data-model.md](docs/data-model.md)
 
 Run locally (Node 24 and Docker):
 
@@ -142,6 +142,81 @@ helpers and the tariff (prices).
 - **Errors:** 400 for invalid input, 401 without a valid token, 403 for another subscriber's data,
   404 for something that doesn't exist, 409 for a conflict with the current state, 422 when a
   payment would break the balance.
+
+## Data model (ER diagram)
+
+The `billing` schema in PostgreSQL (migrations in `migrations/`). The MCP index is a separate
+`docs` schema; its tables, the decisions and the business rules are in
+[docs/data-model.md](docs/data-model.md).
+
+```mermaid
+erDiagram
+    SUBSCRIBERS ||--|| USERS : "logs in as"
+    SUBSCRIBERS ||--o{ USAGE_EVENTS : records
+    SUBSCRIBERS ||--o{ BILLS : "is billed"
+    BILLS ||--o{ PAYMENTS : "is paid by"
+    BILLS |o--o{ USAGE_EVENTS : "counted in"
+
+    SUBSCRIBERS {
+        bigint id PK
+        varchar subscriber_no UK "public number used in API paths"
+        varchar full_name
+        timestamptz created_at
+    }
+    USERS {
+        bigint id PK
+        bigint subscriber_id FK,UK "1:1 with subscriber"
+        varchar username UK
+        varchar password_hash "scrypt (salted)"
+        timestamptz created_at
+    }
+    USAGE_EVENTS {
+        bigint id PK
+        bigint subscriber_id FK
+        smallint period_year
+        smallint period_month "1-12"
+        varchar usage_type "PHONE | INTERNET"
+        int amount "quantity x 10 (minutes) or quantity x 1 (MB)"
+        varchar idempotency_key "required, UK per subscriber"
+        timestamptz created_at
+        bigint bill_id FK "set by Calculate Bill; NULL = not billed yet"
+    }
+    BILLS {
+        bigint id PK
+        bigint subscriber_id FK
+        smallint period_year
+        smallint period_month "UK with subscriber_id"
+        bigint phone_minutes
+        bigint internet_mb
+        numeric phone_charge "NUMERIC(10,2)"
+        numeric internet_charge "NUMERIC(10,2)"
+        numeric total "NUMERIC(10,2)"
+        numeric paid_amount "NUMERIC(10,2), default 0"
+        varchar status "UNPAID | PARTIALLY_PAID | PAID"
+        timestamptz calculated_at
+        varchar tariff_id "price list used, e.g. MOB-BILLING-2026-01"
+    }
+    API_KEYS {
+        bigint id PK
+        varchar name UK "e.g. usage-collector"
+        char key_hash UK "SHA-256 of the key; the key itself is never stored"
+        timestamptz created_at
+        timestamptz revoked_at "NULL = active"
+    }
+    PAYMENTS {
+        bigint id PK
+        bigint bill_id FK
+        varchar transaction_id UK "idempotency key"
+        numeric amount "NUMERIC(10,2)"
+        numeric paid_amount_after "stored for replay"
+        numeric remaining_after "stored for replay"
+        varchar status_after "stored for replay"
+        timestamptz created_at
+    }
+```
+
+`remaining = total - paid_amount` is computed in responses, not stored. `API_KEYS` stands alone:
+a provider key is not tied to a subscriber.
 
 ## Decisions
 
