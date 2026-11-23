@@ -8,7 +8,7 @@ logged-in subscriber's questions by choosing the billing API, the guide or both.
 on AWS (eu-north-1) behind an API Gateway: see [Deployment](#deployment).
 Built with TypeScript, Express and PostgreSQL.
 
-- **Demo video (5 min, no sound):** [docs/demo-video.mp4](docs/demo-video.mp4), see [Demo video](#demo-video)
+- **Demo video (6 min, no sound):** [docs/demo-video.mp4](docs/demo-video.mp4), see [Demo video](#demo-video)
 - **AI agent (chat page):** https://bi-b64790aca077475db74fde98548c2894.ecs.eu-north-1.on.aws/
 - **API Gateway:** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1 (the base URL: lists
   the version and its routes)
@@ -538,7 +538,7 @@ the public one above; it is in Secrets Manager:
 
 ## Demo video
 
-[docs/demo-video.mp4](docs/demo-video.mp4) (5 minutes, no sound), recorded on the AWS deployment
+[docs/demo-video.mp4](docs/demo-video.mp4) (6 minutes, no sound), recorded on the AWS deployment
 (November 23, 2026). In order:
 
 1. The README on GitHub.
@@ -553,9 +553,12 @@ the public one above; it is in Secrets Manager:
    ayse's own bill 5551234 (200, with a page of usage events), 5559999 (403), and after Logout
    without a token (401).
 4. The AWS console: the ECS cluster with the three services, and the RDS database.
+5. The terminal: the same bill through the gateway (200) and from the API's own URL (403 "Use the
+   API Gateway URL"), the three MCP retrieval tests against the deployed MCP server ("extra
+   internet cost" → §8.1, §3.2; "partial payment" → §5.1, §9; "dispute window" → §7.1, §8.4),
+   then `npm test` running.
 
-The direct call refused without the gateway, the three MCP retrieval tests and the unit test run
-are in the screenshots below.
+The end of the test run (212 passing) is in the screenshots below.
 
 ## Screenshots
 
