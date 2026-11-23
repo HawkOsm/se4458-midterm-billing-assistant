@@ -61,6 +61,10 @@ const AgentEnv = z.object({
   MCP_URL: z.url().default("http://127.0.0.1:4000/mcp"),
   CLAUDE_MODEL: z.string().default("claude-haiku-5-5"),
   ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required for the agent"),
+  // Spending cap: the demo logins are public, so anyone could run up the Claude bill.
+  // Counted per UTC day: messages + confirmations per subscriber, and for everyone together.
+  AGENT_DAILY_LIMIT_PER_USER: z.coerce.number().int().positive().default(40),
+  AGENT_DAILY_LIMIT_TOTAL: z.coerce.number().int().positive().default(400),
 });
 
 export type DbConfig = z.infer<typeof DbEnv>;

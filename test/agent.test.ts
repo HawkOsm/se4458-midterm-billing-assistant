@@ -9,6 +9,7 @@ import { Agent, type ModelClient, type TurnResult } from "../src/agent/agent";
 import { BillingApiClient } from "../src/agent/billingApiClient";
 import { connectMcp, type McpTools } from "../src/agent/mcpClient";
 import { BILLING_TOOLS } from "../src/agent/tools";
+import { DailyLimit } from "../src/agent/dailyLimit";
 import { createAgentApp } from "../src/agent/server";
 import { pool } from "../src/db/db";
 import { ensureIndexed } from "../src/mcp/docsService";
@@ -452,6 +453,49 @@ test("web: a second message while the first is still being answered gets 409", {
     assert.equal(fake.calls.length, 2, "the refused message never reached the model");
   } finally {
     release();
+    await web.close();
+  }
+});
+
+// ---------- the daily spending cap ----------
+
+test("daily limit: per subscriber, for everyone, and it restarts the next UTC day", () => {
+  let now = new Date("2026-11-22T23:59:00Z");
+  const limit = new DailyLimit({ perUser: 2, total: 3 }, () => now);
+  assert.equal(limit.take("a").ok, true);
+  assert.equal(limit.take("a").ok, true);
+  const third = limit.take("a");
+  assert.equal(third.ok, false);
+  assert.match(third.ok ? "" : third.reason, /2 messages per subscriber/);
+
+  assert.equal(limit.take("b").ok, true, "another subscriber has their own quota");
+  const full = limit.take("c");
+  assert.equal(full.ok, false, "3 used in total");
+  assert.match(full.ok ? "" : full.reason, /for everyone/);
+
+  now = new Date("2026-11-23T00:00:00Z");
+  assert.equal(limit.take("a").ok, true, "a new day");
+});
+
+test("web: over the daily limit gets 429 without calling Claude; refused requests use no quota", async () => {
+  const fake = new FakeClaude([[text("One.")], [text("Two.")], [text("Three.")]]);
+  const web = await listen(createAgentApp({ agent: agentWith(fake), api, limit: new DailyLimit({ perUser: 2, total: 100 }) }));
+  try {
+    const auth = { Authorization: `Bearer ${ayse().token}` };
+    const first = (await (await web.postJson("/api/chat", { message: "hi" }, auth)).json()) as { conversationId: string };
+    // A confirmation that doesn't exist is refused before the limit: no quota used.
+    const bogus = await web.postJson("/api/confirm", { conversationId: first.conversationId, confirmationId: "nope", approve: true }, auth);
+    assert.equal(bogus.status, 409);
+    assert.equal((await web.postJson("/api/chat", { conversationId: first.conversationId, message: "again" }, auth)).status, 200);
+
+    const over = await web.postJson("/api/chat", { conversationId: first.conversationId, message: "third" }, auth);
+    assert.equal(over.status, 429);
+    assert.match(((await over.json()) as { error: string }).error, /Daily limit/);
+    assert.equal(fake.calls.length, 2, "the refused message never reached Claude");
+
+    const mehmet = { Authorization: `Bearer ${issueToken({ subscriberNo: "5559999" }).accessToken}` };
+    assert.equal((await web.postJson("/api/chat", { message: "hi" }, mehmet)).status, 200, "Mehmet has his own quota");
+  } finally {
     await web.close();
   }
 });

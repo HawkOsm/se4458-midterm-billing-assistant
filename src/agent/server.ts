@@ -10,6 +10,7 @@ import { z } from "zod";
 import { agentConfig } from "../config";
 import { Agent, type Conversation } from "./agent";
 import { BillingApiClient } from "./billingApiClient";
+import { DailyLimit } from "./dailyLimit";
 import { connectMcp, httpTransport } from "./mcpClient";
 import { PAGE_CSS, PAGE_HTML, PAGE_JS } from "./page";
 
@@ -78,7 +79,8 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   return result.data;
 }
 
-export function createAgentApp(deps: { agent: Agent; api: BillingApiClient; store?: ConversationStore }): Express {
+// limit: the daily cap on Claude calls (dailyLimit.ts); without one, nothing is capped (tests).
+export function createAgentApp(deps: { agent: Agent; api: BillingApiClient; store?: ConversationStore; limit?: DailyLimit }): Express {
   const store = deps.store ?? new ConversationStore();
   const app = express();
   app.disable("x-powered-by");
@@ -131,12 +133,20 @@ export function createAgentApp(deps: { agent: Agent; api: BillingApiClient; stor
     }
   }
 
+  // Checked last, after everything that can refuse the request, so a refused request
+  // doesn't use up the subscriber's quota.
+  function spend(conv: Conversation): void {
+    const taken = deps.limit?.take(conv.session.subscriberNo) ?? { ok: true };
+    if (!taken.ok) throw new HttpError(429, taken.reason);
+  }
+
   app.post("/api/chat", async (req, res) => {
     const token = bearer(req);
     const { conversationId, message } = parse(Chat, req.body);
     const conv = conversationFor(token, conversationId, true);
     const result = await exclusive(conv, async () => {
       if (conv.pending) throw new HttpError(409, "Answer the pending confirmation first");
+      spend(conv);
       return deps.agent.ask(conv, message);
     });
     res.json({ conversationId: conv.id, ...result });
@@ -148,6 +158,7 @@ export function createAgentApp(deps: { agent: Agent; api: BillingApiClient; stor
     const conv = conversationFor(token, conversationId, false);
     const result = await exclusive(conv, async () => {
       if (conv.pending?.confirmationId !== confirmationId) throw new HttpError(409, "No such pending confirmation");
+      spend(conv);
       return deps.agent.confirm(conv, confirmationId, approve);
     });
     res.json({ conversationId: conv.id, ...result });
@@ -171,8 +182,10 @@ async function main(): Promise<void> {
   const mcp = await connectMcp(httpTransport(cfg.MCP_URL));
   const api = new BillingApiClient(cfg.API_BASE_URL);
   const agent = new Agent({ model: new Anthropic({ apiKey: cfg.ANTHROPIC_API_KEY }), modelName: cfg.CLAUDE_MODEL, api, mcp });
-  createAgentApp({ agent, api }).listen(cfg.AGENT_PORT, () => {
-    console.log(`Billing assistant on http://localhost:${cfg.AGENT_PORT} (model ${cfg.CLAUDE_MODEL}; API ${cfg.API_BASE_URL}; MCP ${cfg.MCP_URL})`);
+  const limit = new DailyLimit({ perUser: cfg.AGENT_DAILY_LIMIT_PER_USER, total: cfg.AGENT_DAILY_LIMIT_TOTAL });
+  createAgentApp({ agent, api, limit }).listen(cfg.AGENT_PORT, () => {
+    console.log(`Billing assistant on http://localhost:${cfg.AGENT_PORT} (model ${cfg.CLAUDE_MODEL}; API ${cfg.API_BASE_URL}; MCP ${cfg.MCP_URL}; ` +
+      `daily limit ${cfg.AGENT_DAILY_LIMIT_PER_USER}/subscriber, ${cfg.AGENT_DAILY_LIMIT_TOTAL} total)`);
   });
 }
 
