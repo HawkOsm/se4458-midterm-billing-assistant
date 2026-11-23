@@ -3,11 +3,14 @@ import "./testEnv"; // before src/config is imported (it reads process.env once)
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import jwt from "jsonwebtoken";
+import { createApp } from "../src/app";
 import { apiConfig } from "../src/config";
+import { LoginLimiter } from "../src/services/loginLimiter";
 import {
   beginTestTransaction,
   closePool,
   insertUser,
+  listen,
   prepareTestDatabase,
   startTestServer,
   type TestServer,
@@ -102,4 +105,58 @@ test("a second user named Ayse (different case) is rejected by the database", as
     (err: { constraint?: string }) => err.constraint === "uq_users_username_lower",
   );
   await tx.client.query("ROLLBACK TO SAVEPOINT dup");
+});
+
+// ---------- lockout: 3 wrong passwords, then 30 seconds ----------
+
+const wrong = () => api.postJson("/api/v1/login", { username: "ayse", password: "wrong" });
+const right = (username = "ayse") => api.postJson("/api/v1/login", { username, password: "correct-horse" });
+
+test("after 3 wrong passwords the username is locked: 429 with Retry-After, even for the right password", async () => {
+  for (let i = 0; i < 3; i++) assert.equal((await wrong()).status, 401, `wrong try ${i + 1}`);
+
+  const res = await right();
+  assert.equal(res.status, 429);
+  assert.equal(res.headers.get("retry-after"), "30");
+  assert.deepEqual(await res.json(), { error: "Too many failed logins. Try again in 30 seconds" });
+  assert.equal((await right(" AYSE ")).status, 429, "the same account in another spelling");
+});
+
+test("two wrong passwords don't lock, and a successful login resets the count", async () => {
+  await wrong();
+  await wrong();
+  assert.equal((await right()).status, 200);
+  await wrong();
+  await wrong();
+  assert.equal((await right()).status, 200, "still 2 in a row, not 4");
+});
+
+test("a lock is per username: other users can still log in, and unknown names lock the same way", async () => {
+  await insertUser(tx.client, "5559999", "mehmet", "correct-horse");
+  for (let i = 0; i < 3; i++) await wrong();
+  assert.equal((await right("mehmet")).status, 200);
+
+  const nobody = () => api.postJson("/api/v1/login", { username: "nobody", password: "x" });
+  for (let i = 0; i < 3; i++) assert.equal((await nobody()).status, 401);
+  assert.equal((await nobody()).status, 429, "doesn't reveal that the name doesn't exist");
+});
+
+test("after 30 seconds the lock ends and there are 3 new tries", async () => {
+  let now = 1_000_000;
+  const timed = await listen(createApp(tx.client, { loginLimiter: new LoginLimiter(() => now) }));
+  const login = (password: string) => timed.postJson("/api/v1/login", { username: "ayse", password });
+  try {
+    for (let i = 0; i < 3; i++) await login("wrong");
+    now += 29_000;
+    const locked = await login("correct-horse");
+    assert.equal(locked.status, 429);
+    assert.equal(locked.headers.get("retry-after"), "1");
+
+    now += 1_000;
+    assert.equal((await login("wrong")).status, 401, "try 1 of the new 3");
+    assert.equal((await login("wrong")).status, 401);
+    assert.equal((await login("correct-horse")).status, 200, "the third try still works");
+  } finally {
+    await timed.close();
+  }
 });

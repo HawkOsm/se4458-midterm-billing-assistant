@@ -12,10 +12,15 @@ import type { Db } from "./db/db";
 import { buildOpenApiDocument } from "./docs/openapi";
 import { DtoError } from "./dto/dtoError";
 import { gatewayOnly } from "./middleware/gatewayOnly";
+import type { LoginLimiter } from "./services/loginLimiter";
 
 // gatewaySecret: set on AWS, where only requests forwarded by the API Gateway may reach the
 // API (see middleware/gatewayOnly.ts). Left out locally and in tests.
-export function createApp(db: Db, options: { gatewaySecret?: string | undefined } = {}): express.Express {
+// loginLimiter: tests pass one with their own clock; otherwise each app gets a new one.
+export function createApp(
+  db: Db,
+  options: { gatewaySecret?: string | undefined; loginLimiter?: LoginLimiter } = {},
+): express.Express {
   const app = express();
   app.disable("x-powered-by"); // don't tell every client which framework runs here
 
@@ -41,7 +46,7 @@ export function createApp(db: Db, options: { gatewaySecret?: string | undefined 
   // The ONLY place the version is written. A breaking change would add a second
   // ApiVersion("/api/v2", registry) with its own controllers, next to this one.
   const v1 = new ApiVersion("/api/v1", registry);
-  authController(v1, db);
+  authController(v1, db, options.loginLimiter);
   billController(v1, db);
   usageController(v1, db);
   paymentController(v1, db);

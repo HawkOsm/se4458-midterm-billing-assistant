@@ -542,7 +542,7 @@
           "Auth"
         ],
         "summary": "Log in",
-        "description": "Exchange username and password for a JWT (valid 15 minutes).",
+        "description": "Exchange username and password for a JWT (valid 15 minutes). After 3 wrong passwords in a row, the username is locked for 30 seconds.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -575,6 +575,16 @@
           },
           "401": {
             "description": "Wrong username or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords; see the Retry-After header (seconds)",
             "content": {
               "application/json": {
                 "schema": {

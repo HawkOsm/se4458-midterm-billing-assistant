@@ -65,7 +65,7 @@ the amount so far and can't be paid yet.
 
 | Operation | Route | Who | Success | Errors |
 | --- | --- | --- | --- | --- |
-| Log in | `POST /login` | anyone | 200 token (15 min) | 400, 401 |
+| Log in | `POST /login` | anyone | 200 token (15 min) | 400, 401, 429 |
 | Query Bill | `GET /subscribers/{no}/bills/{year}/{month}` | anyone (assignment: no auth) | 200 | 400, 404 |
 | Query Bill Detailed | `GET /subscribers/{no}/bills/{year}/{month}/details?offset=0&limit=20` | own subscriber, provider key | 200 | 400, 401, 403, 404 |
 | Calculate Bill | `PUT /subscribers/{no}/bills/{year}/{month}` | own subscriber, provider key | 201 created, 200 recalculated | 400, 401, 403, 404, 409, 422 |
@@ -126,7 +126,9 @@ helpers and the tariff (prices).
   that every documented route really answers.
 - **Login:** subscribers get a JWT (HS256, 15 minutes) with their subscriber number as its subject;
   passwords are stored as salted scrypt hashes. The token must match the number in the URL, so
-  knowing someone's subscriber number is not enough to read or change their data.
+  knowing someone's subscriber number is not enough to read or change their data. After 3 wrong
+  passwords in a row a username is locked for 30 seconds (429 with `Retry-After`), then gets 3 new
+  tries; the count is kept in memory, per username.
 - **Provider API keys:** the provider's systems authenticate with a key in `X-API-Key`. The
   database stores only its SHA-256 hash (a fast hash is enough for a long random key, unlike a
   password), and a key can be revoked.
@@ -258,8 +260,8 @@ npm test
 ```
 
 ```
-ℹ tests 212
-ℹ pass 212
+ℹ tests 217
+ℹ pass 217
 ℹ fail 0
 ```
 
@@ -511,7 +513,8 @@ paged with `offset` and `limit`):
 The same three calls with curl:
 [docs/screenshots/08-gateway-protected-route.png](docs/screenshots/08-gateway-protected-route.png).
 
-**Unit tests** (`docker compose up -d && npm test`): 212 passing.
+**Unit tests** (`docker compose up -d && npm test`): 217 passing (212 when these screenshots were
+taken, before the login lockout tests).
 
 ![Unit tests, start](docs/screenshots/09-unit-tests-1.png)
 ![Unit tests, end](docs/screenshots/10-unit-tests-2.png)

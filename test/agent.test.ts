@@ -395,6 +395,19 @@ test("every request gives Claude the tools and the rules, with today's date", as
 
 // ---------- the web server ----------
 
+test("web: the API's login lockout reaches the chat page as 429 with its message", async () => {
+  await insertUser(tx.client, AYSE, "ayse", "correct-horse");
+  const web = await listen(createAgentApp({ agent: agentWith(new FakeClaude([])), api }));
+  try {
+    for (let i = 0; i < 3; i++) assert.equal((await web.postJson("/api/login", { username: "ayse", password: "wrong" })).status, 401);
+    const res = await web.postJson("/api/login", { username: "ayse", password: "correct-horse" });
+    assert.equal(res.status, 429);
+    assert.deepEqual(await res.json(), { error: "Too many failed logins. Try again in 30 seconds" });
+  } finally {
+    await web.close();
+  }
+});
+
 test("web: log in, chat, confirm a payment; conversations are bound to their subscriber", async () => {
   await insertUser(tx.client, AYSE, "ayse", "correct-horse");
   await insertBill(tx.client, { subscriberNo: AYSE, year: 2025, month: 4 });

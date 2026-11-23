@@ -99,7 +99,13 @@ export function createAgentApp(deps: { agent: Agent; api: BillingApiClient; stor
   app.post("/api/login", async (req, res) => {
     const { username, password } = parse(Login, req.body);
     const out = await deps.api.login(username, password);
-    if (out.status !== 200) throw new HttpError(out.status === 401 ? 401 : 502, out.status === 401 ? "Invalid username or password" : "Login failed");
+    if (out.status === 401) throw new HttpError(401, "Invalid username or password");
+    if (out.status === 429) {
+      // The API's lockout after 3 wrong passwords: pass its message ("Try again in N seconds") on.
+      const message = (out.body as { error?: unknown } | null)?.error;
+      throw new HttpError(429, typeof message === "string" ? message : "Too many failed logins. Try again later");
+    }
+    if (out.status !== 200) throw new HttpError(502, "Login failed");
     const { accessToken, expiresIn } = out.body as { accessToken: string; expiresIn: number };
     res.json({ token: accessToken, subscriberNo: subscriberOf(accessToken), expiresIn });
   });
