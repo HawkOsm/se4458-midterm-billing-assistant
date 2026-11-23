@@ -36,7 +36,7 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
-COPY documents ./documents
+COPY docs/Mobile_Provider_Billing_Guide.md ./docs/
 COPY certs ./certs
 # Don't run as root inside the container.
 USER node

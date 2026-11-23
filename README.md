@@ -291,7 +291,7 @@ and adds an HTTP transport so it can be deployed as its own service.
 | Transports | stdio: `npm run mcp` (the client starts it); Streamable HTTP: `npm run mcp:http`, `POST /mcp`, stateless (any instance can answer any request), `GET /health` |
 | Secrets | only the database settings: it never receives the API's JWT key |
 
-**Indexing:** `documents/Mobile_Provider_Billing_Guide.md` is split into one chunk per numbered
+**Indexing:** `docs/Mobile_Provider_Billing_Guide.md` is split into one chunk per numbered
 section (25: §1, 2.1–8.4, §9), each keeping its section number, heading and document ID, and
 stored in PostgreSQL (`docs` schema) with a full-text index: English stemming, so "blocks" finds
 "block", and the heading weighted above the body. The server indexes when it starts and rebuilds

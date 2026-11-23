@@ -6,6 +6,8 @@ dist
 assets
 test
 docs
+# ...except the billing guide, which the MCP server indexes at startup.
+!docs/Mobile_Provider_Billing_Guide.md
 deploy
 .git
 .claude

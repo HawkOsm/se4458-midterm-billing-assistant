@@ -7,7 +7,7 @@ import * as docsDbContext from "../db/docsDbContext";
 import { parseGuide, type ParsedGuide } from "./guideParser";
 
 // From src/mcp (tsx) and dist/mcp (compiled), the repository root is two levels up.
-export const GUIDE_PATH = path.join(__dirname, "..", "..", "documents", "Mobile_Provider_Billing_Guide.md");
+export const GUIDE_PATH = path.join(__dirname, "..", "..", "docs", "Mobile_Provider_Billing_Guide.md");
 
 export interface IndexResult {
   documentId: string;
