@@ -17,3 +17,7 @@ npm-debug.log*
 
 # Course materials (local reference only, not committed)
 assets/
+
+# Local assistant settings (not part of the project)
+CLAUDE.md
+.claude/
