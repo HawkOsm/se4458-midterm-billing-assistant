@@ -4,7 +4,7 @@
   "executionRoleArn": "arn:aws:iam::860897619048:role/ecsTaskExecutionRole",
   "infrastructureRoleArn": "arn:aws:iam::860897619048:role/ecsInfrastructureRoleForExpressServices",
   "primaryContainer": {
-    "image": "860897619048.dkr.ecr.eu-north-1.amazonaws.com/billing-assistant:75e6a33",
+    "image": "860897619048.dkr.ecr.eu-north-1.amazonaws.com/billing-assistant:b233fe8",
     "containerPort": 8080,
     "command": ["node", "dist/agent/server.js"],
     "environment": [
