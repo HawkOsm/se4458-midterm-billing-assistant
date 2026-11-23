@@ -9,7 +9,7 @@ import { billController } from "./controllers/billController";
 import { paymentController } from "./controllers/paymentController";
 import { usageController } from "./controllers/usageController";
 import type { Db } from "./db/db";
-import { buildOpenApiDocument } from "./docs/openapi";
+import { API_TITLE, buildOpenApiDocument } from "./docs/openapi";
 import { DtoError } from "./dto/dtoError";
 import { gatewayOnly } from "./middleware/gatewayOnly";
 import type { LoginLimiter } from "./services/loginLimiter";
@@ -50,6 +50,7 @@ export function createApp(
   billController(v1, db);
   usageController(v1, db);
   paymentController(v1, db);
+  v1.serveIndex(API_TITLE); // GET /api/v1: the version's index page
   app.use(v1.prefix, v1.router);
 
   // Swagger: the page is at /api-docs and the raw spec at /openapi.json.

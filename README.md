@@ -9,7 +9,8 @@ on AWS (eu-north-1) behind an API Gateway: see [Deployment](#deployment).
 Built with TypeScript, Express and PostgreSQL.
 
 - **AI agent (chat page):** https://bi-b64790aca077475db74fde98548c2894.ecs.eu-north-1.on.aws/
-- **API Gateway:** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1
+- **API Gateway:** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1 (the base URL: lists
+  the version and its routes)
 - **Swagger (through the gateway):** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api-docs/
 - **MCP server:** https://bi-814046f5580045559bc8c2452688e657.ecs.eu-north-1.on.aws/mcp
 - **Source code:** https://github.com/HawkOsm/se4458-midterm-billing-assistant
@@ -54,7 +55,8 @@ internet blocks), Mehmet October 2026 **$70**. Running the seed again adds nothi
 
 ## Endpoints
 
-All routes are under `/api/v1`. Two kinds of caller. A **subscriber** logs in (`POST /login`,
+All routes are under `/api/v1`; `GET /api/v1` itself lists the version, the Swagger address and the
+routes. Two kinds of caller. A **subscriber** logs in (`POST /login`,
 then `Authorization: Bearer <token>`) and acts only on their own number (another subscriber's gets
 403); the AI agent always works as the subscriber who logged in. The **provider's systems** (the
 network's usage collector, the billing run) send `X-API-Key: <key>`: they record usage and can
@@ -335,8 +337,8 @@ npm test
 ```
 
 ```
-ℹ tests 217
-ℹ pass 217
+ℹ tests 218
+ℹ pass 218
 ℹ fail 0
 ```
 
@@ -588,8 +590,8 @@ paged with `offset` and `limit`):
 The same three calls with curl:
 [docs/screenshots/08-gateway-protected-route.png](docs/screenshots/08-gateway-protected-route.png).
 
-**Unit tests** (`docker compose up -d && npm test`): 217 passing (212 when these screenshots were
-taken, before the login lockout tests).
+**Unit tests** (`docker compose up -d && npm test`): 218 passing (212 when these screenshots were
+taken, before the login lockout and index page tests).
 
 ![Unit tests, start](docs/screenshots/09-unit-tests-1.png)
 ![Unit tests, end](docs/screenshots/10-unit-tests-2.png)

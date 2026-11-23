@@ -78,3 +78,18 @@ test("docs/openapi.json is the spec the app serves (run `npm run openapi` after 
   const served: unknown = await (await api.get("/openapi.json")).json();
   assert.deepEqual(JSON.parse(readFileSync(OPENAPI_FILE, "utf8")), served);
 });
+
+test("GET /api/v1 lists the version and exactly the documented routes", async () => {
+  const res = await api.get("/api/v1");
+  const index = (await res.json()) as { name: string; version: string; docs: string; openapi: string; routes: { method: string; path: string; summary: string }[] };
+
+  assert.equal(res.status, 200);
+  assert.equal(index.version, "v1");
+  assert.equal(index.docs, "/api-docs/");
+  assert.equal(index.openapi, "/openapi.json");
+  const listed = index.routes.map((r) => `${r.method.toLowerCase()} ${r.path}`).sort();
+  const documented = (await documentedRoutes()).map((r) => `${r.method} ${r.path}`).sort();
+  assert.deepEqual(listed, documented);
+  assert.ok(index.routes.every((r) => r.summary !== ""), "every route has a summary");
+  assert.equal((await api.get("/api/v1/")).status, 200, "with a trailing slash too");
+});
