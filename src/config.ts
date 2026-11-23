@@ -40,6 +40,13 @@ const ApiEnv = DbEnv.extend({
   JWT_AUDIENCE: z.string().default("billing-assistant"),
   // 15 minutes, like the teacher's LoginController.
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  // On AWS: the header value the API Gateway adds (middleware/gatewayOnly.ts). Required in
+  // production, so a deployment can't forget it and leave the service URL open.
+  // An empty value (GATEWAY_SECRET= in .env) means not set.
+  GATEWAY_SECRET: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(32, "GATEWAY_SECRET must be at least 32 characters").optional(),
+  ),
 });
 
 const McpEnv = DbEnv.extend({
@@ -86,6 +93,9 @@ export function parseConfig(env: NodeJS.ProcessEnv): Config {
         `POSTGRES_HOST=${parsed.POSTGRES_HOST}, POSTGRES_SSL=${parsed.POSTGRES_SSL}). ` +
         "Set a private random JWT_SECRET.",
     );
+  }
+  if (parsed.APP_ENV === "production" && !parsed.GATEWAY_SECRET) {
+    throw new Error("Refusing to start: GATEWAY_SECRET is required in production (the API Gateway's header).");
   }
   return parsed;
 }

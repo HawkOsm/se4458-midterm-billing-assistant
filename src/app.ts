@@ -11,10 +11,19 @@ import { usageController } from "./controllers/usageController";
 import type { Db } from "./db/db";
 import { buildOpenApiDocument } from "./docs/openapi";
 import { DtoError } from "./dto/dtoError";
+import { gatewayOnly } from "./middleware/gatewayOnly";
 
-export function createApp(db: Db): express.Express {
+// gatewaySecret: set on AWS, where only requests forwarded by the API Gateway may reach the
+// API (see middleware/gatewayOnly.ts). Left out locally and in tests.
+export function createApp(db: Db, options: { gatewaySecret?: string | undefined } = {}): express.Express {
   const app = express();
   app.disable("x-powered-by"); // don't tell every client which framework runs here
+
+  // For the load balancer's health check, which doesn't come through the gateway.
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+  app.use(gatewayOnly(options.gatewaySecret));
   app.use(express.json());
 
   // One registry per app: every route registered below ends up in this Swagger document.

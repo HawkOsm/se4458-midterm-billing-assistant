@@ -37,8 +37,24 @@ test("the public dev key is refused over TLS, even with a local host (tunnel to 
   );
 });
 
+const GATEWAY_SECRET = "gateway-test-secret-0123456789abcdefghij";
+
 test("a private key works in production", () => {
-  assert.equal(parseConfig({ JWT_SECRET: PRIVATE_KEY, APP_ENV: "production", POSTGRES_SSL: "true" }).APP_ENV, "production");
+  const cfg = parseConfig({ JWT_SECRET: PRIVATE_KEY, APP_ENV: "production", POSTGRES_SSL: "true", GATEWAY_SECRET });
+  assert.equal(cfg.APP_ENV, "production");
+});
+
+test("production refuses to start without the gateway secret", () => {
+  assert.throws(() => parseConfig({ JWT_SECRET: PRIVATE_KEY, APP_ENV: "production", POSTGRES_SSL: "true" }), /GATEWAY_SECRET is required/);
+});
+
+test("an empty gateway secret means not set (GATEWAY_SECRET= in .env)", () => {
+  assert.equal(parseConfig({ JWT_SECRET: PRIVATE_KEY, GATEWAY_SECRET: "" }).GATEWAY_SECRET, undefined);
+  assert.throws(() => parseConfig({ JWT_SECRET: PRIVATE_KEY, APP_ENV: "production", POSTGRES_SSL: "true", GATEWAY_SECRET: "" }), /GATEWAY_SECRET is required/);
+});
+
+test("a short gateway secret is refused", () => {
+  assert.throws(() => parseConfig({ JWT_SECRET: PRIVATE_KEY, GATEWAY_SECRET: "short" }), /at least 32/);
 });
 
 test("a private key works with a remote database", () => {

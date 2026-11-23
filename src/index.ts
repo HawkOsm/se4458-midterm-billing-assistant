@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   // Checked against the real database before any request is served.
   await assertSafeSigningKey(pool);
 
-  const server = createApp(pool).listen(config.PORT, () => {
+  const server = createApp(pool, { gatewaySecret: config.GATEWAY_SECRET }).listen(config.PORT, () => {
     console.log(`Billing API on http://localhost:${config.PORT} (Swagger: /api-docs)`);
   });
 
