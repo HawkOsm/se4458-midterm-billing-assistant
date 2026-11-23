@@ -189,9 +189,13 @@ async function main(): Promise<void> {
   const api = new BillingApiClient(cfg.API_BASE_URL);
   const agent = new Agent({ model: new Anthropic({ apiKey: cfg.ANTHROPIC_API_KEY }), modelName: cfg.CLAUDE_MODEL, api, mcp });
   const limit = new DailyLimit({ perUser: cfg.AGENT_DAILY_LIMIT_PER_USER, total: cfg.AGENT_DAILY_LIMIT_TOTAL });
-  createAgentApp({ agent, api, limit }).listen(cfg.AGENT_PORT, () => {
+  const server = createAgentApp({ agent, api, limit }).listen(cfg.AGENT_PORT, () => {
     console.log(`Billing assistant on http://localhost:${cfg.AGENT_PORT} (model ${cfg.CLAUDE_MODEL}; API ${cfg.API_BASE_URL}; MCP ${cfg.MCP_URL}; ` +
       `daily limit ${cfg.AGENT_DAILY_LIMIT_PER_USER}/subscriber, ${cfg.AGENT_DAILY_LIMIT_TOTAL} total)`);
+  });
+  // ECS stops a task with SIGTERM: finish the answers in progress, then close the MCP connection.
+  process.on("SIGTERM", () => {
+    server.close(() => void mcp.close());
   });
 }
 
