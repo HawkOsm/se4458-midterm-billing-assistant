@@ -14,6 +14,8 @@ Built with TypeScript, Express and PostgreSQL.
 - **MCP server:** https://bi-814046f5580045559bc8c2452688e657.ecs.eu-north-1.on.aws/mcp
 - **Source code:** https://github.com/HawkOsm/se4458-midterm-billing-assistant
 - **Swagger page (local):** http://localhost:3000/api-docs/ (raw spec: `/openapi.json`)
+- **OpenAPI specification file:** [docs/openapi.json](docs/openapi.json) (OpenAPI 3.0.3, written
+  from the code by `npm run openapi`; a test fails if it differs from what the API serves)
 - **Data model, decisions and business rules:** [docs/data-model.md](docs/data-model.md)
 
 Run locally (Node 24 and Docker):
@@ -252,8 +254,8 @@ npm test
 ```
 
 ```
-ℹ tests 211
-ℹ pass 211
+ℹ tests 212
+ℹ pass 212
 ℹ fail 0
 ```
 

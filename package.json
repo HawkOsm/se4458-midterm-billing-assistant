@@ -22,6 +22,7 @@
     "typecheck": "tsc",
     "migrate": "tsx --env-file=.env src/db/migrate.ts",
     "seed": "tsx --env-file=.env scripts/seed.ts",
+    "openapi": "tsx scripts/export-openapi.ts",
     "test": "tsx --test --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": {

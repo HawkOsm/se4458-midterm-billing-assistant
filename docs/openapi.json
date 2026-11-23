@@ -1,0 +1,1167 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mobile Provider Billing API",
+    "version": "1.0.0",
+    "description": "Billing operations for the SE4458 AI Billing Support Assistant."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    },
+    "schemas": {
+      "Token": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          },
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Seconds until the token expires",
+            "example": 900
+          }
+        },
+        "required": [
+          "accessToken",
+          "tokenType",
+          "expiresIn"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "No bill for 5551234 in 2025-04"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "example": "ayse"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "<see README test data>"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "Bill": {
+        "type": "object",
+        "properties": {
+          "subscriberNo": {
+            "type": "string",
+            "example": "5551234"
+          },
+          "year": {
+            "type": "integer",
+            "example": 2025
+          },
+          "month": {
+            "type": "integer",
+            "example": 4
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "example": "75.00"
+          },
+          "paidAmount": {
+            "type": "string",
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "example": "25.00"
+          },
+          "remainingBalance": {
+            "type": "string",
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "example": "50.00"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "UNPAID",
+              "PARTIALLY_PAID",
+              "PAID"
+            ],
+            "example": "PARTIALLY_PAID"
+          },
+          "estimate": {
+            "type": "boolean",
+            "description": "true while the billing month is still running: the total so far, which will change and can't be paid yet. Don't present it as the month's bill (guide §4.4).",
+            "example": false
+          }
+        },
+        "required": [
+          "subscriberNo",
+          "year",
+          "month",
+          "total",
+          "paidAmount",
+          "remainingBalance",
+          "status",
+          "estimate"
+        ]
+      },
+      "BillDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Bill"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "calculatedAt": {
+                "type": "string",
+                "example": "2025-05-01T00:00:00.000Z"
+              },
+              "tariffId": {
+                "type": "string",
+                "description": "Price list the bill was calculated with",
+                "example": "MOB-BILLING-2026-01"
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "phoneMinutes": {
+                    "type": "integer",
+                    "example": 1350
+                  },
+                  "internetMb": {
+                    "type": "integer",
+                    "example": 35000
+                  },
+                  "internetGb": {
+                    "type": "number",
+                    "description": "internetMb / 1000 (guide §3.3)",
+                    "example": 35
+                  }
+                },
+                "required": [
+                  "phoneMinutes",
+                  "internetMb",
+                  "internetGb"
+                ]
+              },
+              "charges": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "object",
+                    "properties": {
+                      "includedMinutes": {
+                        "type": "integer",
+                        "example": 1000
+                      },
+                      "extraBlocks": {
+                        "type": "integer",
+                        "description": "Started 1,000-minute blocks above the free minutes",
+                        "example": 1
+                      },
+                      "blockMinutes": {
+                        "type": "integer",
+                        "example": 1000
+                      },
+                      "blockPrice": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{2}$",
+                        "example": "10.00"
+                      },
+                      "charge": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{2}$",
+                        "example": "10.00"
+                      }
+                    },
+                    "required": [
+                      "includedMinutes",
+                      "extraBlocks",
+                      "blockMinutes",
+                      "blockPrice",
+                      "charge"
+                    ]
+                  },
+                  "internet": {
+                    "type": "object",
+                    "properties": {
+                      "baseCharge": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{2}$",
+                        "description": "Monthly price, charged even with zero usage",
+                        "example": "50.00"
+                      },
+                      "includedGb": {
+                        "type": "integer",
+                        "example": 20
+                      },
+                      "extraBlocks": {
+                        "type": "integer",
+                        "description": "Started 10 GB blocks above 20 GB",
+                        "example": 2
+                      },
+                      "blockGb": {
+                        "type": "integer",
+                        "example": 10
+                      },
+                      "blockPrice": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{2}$",
+                        "example": "10.00"
+                      },
+                      "charge": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{2}$",
+                        "example": "70.00"
+                      }
+                    },
+                    "required": [
+                      "baseCharge",
+                      "includedGb",
+                      "extraBlocks",
+                      "blockGb",
+                      "blockPrice",
+                      "charge"
+                    ]
+                  }
+                },
+                "required": [
+                  "phone",
+                  "internet"
+                ]
+              },
+              "usageEvents": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/UsageEvent"
+                    }
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "example": 20
+                  },
+                  "total": {
+                    "type": "integer",
+                    "description": "All events counted in this bill",
+                    "example": 3635
+                  }
+                },
+                "required": [
+                  "items",
+                  "offset",
+                  "limit",
+                  "total"
+                ]
+              }
+            },
+            "required": [
+              "calculatedAt",
+              "tariffId",
+              "usage",
+              "charges",
+              "usageEvents"
+            ]
+          }
+        ]
+      },
+      "UsageEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "PHONE",
+              "INTERNET"
+            ],
+            "example": "PHONE"
+          },
+          "amount": {
+            "type": "integer",
+            "example": 10
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "minutes",
+              "MB"
+            ],
+            "example": "minutes"
+          },
+          "recordedAt": {
+            "type": "string",
+            "example": "2025-04-12T09:30:00.000Z"
+          }
+        },
+        "required": [
+          "type",
+          "amount",
+          "unit",
+          "recordedAt"
+        ]
+      },
+      "UsageRecord": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "RECORDED"
+            ]
+          },
+          "subscriberNo": {
+            "type": "string",
+            "example": "5551234"
+          },
+          "year": {
+            "type": "integer",
+            "example": 2025
+          },
+          "month": {
+            "type": "integer",
+            "example": 4
+          },
+          "usageType": {
+            "type": "string",
+            "enum": [
+              "PHONE",
+              "INTERNET"
+            ],
+            "example": "INTERNET"
+          },
+          "quantity": {
+            "type": "integer",
+            "example": 50
+          },
+          "amount": {
+            "type": "integer",
+            "description": "Minutes for PHONE, MB for INTERNET",
+            "example": 50
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "minutes",
+              "MB"
+            ],
+            "example": "MB"
+          },
+          "recordedAt": {
+            "type": "string",
+            "example": "2025-04-12T09:30:00.000Z"
+          }
+        },
+        "required": [
+          "status",
+          "subscriberNo",
+          "year",
+          "month",
+          "usageType",
+          "quantity",
+          "amount",
+          "unit",
+          "recordedAt"
+        ]
+      },
+      "AddUsageRequest": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "example": 2025
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "example": 4
+          },
+          "usageType": {
+            "type": "string",
+            "enum": [
+              "PHONE",
+              "INTERNET"
+            ],
+            "example": "INTERNET"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 1,
+            "description": "Units to record: each PHONE unit is 10 minutes, each INTERNET unit is 1 MB. Default 1 (the spec's one unit per call).",
+            "example": 50
+          }
+        },
+        "required": [
+          "year",
+          "month",
+          "usageType"
+        ]
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "paymentStatus": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED"
+            ],
+            "description": "Simulated payment, no real money moved"
+          },
+          "transactionId": {
+            "type": "string",
+            "example": "pay-2025-04-0001"
+          },
+          "subscriberNo": {
+            "type": "string",
+            "example": "5551234"
+          },
+          "year": {
+            "type": "integer",
+            "example": 2025
+          },
+          "month": {
+            "type": "integer",
+            "example": 4
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "example": "25.00"
+          },
+          "paidAmount": {
+            "type": "string",
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "description": "Paid on this bill after this payment",
+            "example": "25.00"
+          },
+          "remainingBalance": {
+            "type": "string",
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "example": "55.00"
+          },
+          "billStatus": {
+            "type": "string",
+            "enum": [
+              "UNPAID",
+              "PARTIALLY_PAID",
+              "PAID"
+            ],
+            "example": "PARTIALLY_PAID"
+          }
+        },
+        "required": [
+          "paymentStatus",
+          "transactionId",
+          "subscriberNo",
+          "year",
+          "month",
+          "amount",
+          "paidAmount",
+          "remainingBalance",
+          "billStatus"
+        ]
+      },
+      "PayBillRequest": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Unique per payment; a retry reuses it",
+            "example": "pay-2025-04-0001"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "example": "25.50"
+          }
+        },
+        "required": [
+          "transactionId",
+          "amount"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/api/v1/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log in",
+        "description": "Exchange username and password for a JWT (valid 15 minutes).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong username or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscribers/{subscriberNo}/bills/{year}/{month}": {
+      "get": {
+        "tags": [
+          "Bills"
+        ],
+        "summary": "Query Bill",
+        "description": "Bill total, paid amount, remaining balance and status. No authentication (per spec).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "example": "5551234"
+            },
+            "required": true,
+            "name": "subscriberNo",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100,
+              "example": 2025
+            },
+            "required": true,
+            "name": "year",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "example": 4
+            },
+            "required": true,
+            "name": "month",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored bill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bill"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid subscriber number, year or month",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No bill has been calculated for this period",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Bills"
+        ],
+        "summary": "Calculate Bill",
+        "description": "Calculates the month's bill from its recorded usage (guide §4.2) and stores it. PUT because it is idempotent: repeating it updates the same bill. Allowed until the bill's first payment. The subscriber's own token (to see the month so far), or a provider API key (the billing run).",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "example": "5551234"
+            },
+            "required": true,
+            "name": "subscriberNo",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100,
+              "example": 2025
+            },
+            "required": true,
+            "name": "year",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "example": 4
+            },
+            "required": true,
+            "name": "month",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bill recalculated (unchanged if no new usage)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bill"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Bill created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bill"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, or a month that hasn't started yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another subscriber's token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown subscriber",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bill already has payments and is locked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The month's usage is too large to bill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscribers/{subscriberNo}/bills/{year}/{month}/details": {
+      "get": {
+        "tags": [
+          "Bills"
+        ],
+        "summary": "Query Bill Detailed",
+        "description": "The stored bill with usage, charge breakdown, and a page of the usage events it was calculated from (newest first). The subscriber's own token, or a provider API key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "example": "5551234"
+            },
+            "required": true,
+            "name": "subscriberNo",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100,
+              "example": 2025
+            },
+            "required": true,
+            "name": "year",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "example": 4
+            },
+            "required": true,
+            "name": "month",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "nullable": true,
+              "minimum": 0,
+              "default": 0,
+              "example": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bill breakdown and one page of usage events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or paging parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another subscriber's token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No bill has been calculated for this period",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscribers/{subscriberNo}/usage": {
+      "post": {
+        "tags": [
+          "Usage"
+        ],
+        "summary": "Add Usage",
+        "description": "Records usage for a month: each PHONE unit is 10 minutes, each INTERNET unit is 1 MB (guide §2.3, §3.3). Requires an Idempotency-Key header: a retry with the same key and body returns the original response (header Idempotent-Replayed: true) and records nothing. Provider side: requires a provider API key (usage comes from the network, not from the customer).",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "example": "5551234"
+            },
+            "required": true,
+            "name": "subscriberNo",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Unique per usage report; retries reuse it",
+              "example": "3f6c1e2a-8b1d-4c3e-9a7f-1b2c3d4e5f60"
+            },
+            "required": true,
+            "description": "Unique per usage report; retries reuse it",
+            "name": "idempotency-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddUsageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded (or the replay of an earlier identical call)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, missing Idempotency-Key, or a month that hasn't started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A subscriber token (only the provider records usage)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown subscriber",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Key reused with a different body, or the month's bill already has payments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscribers/{subscriberNo}/bills/{year}/{month}/payments": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Pay Bill",
+        "description": "Records a simulated full or partial payment (no real money). transactionId is the idempotency key: a retry with the same transactionId and details returns the original result (header Idempotent-Replayed: true) and pays nothing again. The AI agent must get the user's explicit confirmation before calling this (guide §5.2). Requires the subscriber's own token.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "example": "5551234"
+            },
+            "required": true,
+            "name": "subscriberNo",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100,
+              "example": 2025
+            },
+            "required": true,
+            "name": "year",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "example": 4
+            },
+            "required": true,
+            "name": "month",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayBillRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment accepted (or the replay of an earlier identical call)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Payment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body (amount must be positive, at most 2 decimals)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the subscriber's own token (a provider key can't pay for a subscriber)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown subscriber, or no bill calculated for the month",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "transactionId already used for a different payment, the month isn't over yet, or usage was added after the bill was calculated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Amount exceeds the remaining balance, or the bill is already fully paid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

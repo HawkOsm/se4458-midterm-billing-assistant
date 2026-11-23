@@ -4,6 +4,8 @@
 import "./testEnv";
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, test } from "node:test";
+import { readFileSync } from "node:fs";
+import { OPENAPI_FILE } from "../scripts/export-openapi";
 import { createApp } from "../src/app";
 import {
   beginTestTransaction,
@@ -70,4 +72,9 @@ test("building the app twice doesn't duplicate Swagger entries", async () => {
   } finally {
     await second.close();
   }
+});
+
+test("docs/openapi.json is the spec the app serves (run `npm run openapi` after changing routes)", async () => {
+  const served: unknown = await (await api.get("/openapi.json")).json();
+  assert.deepEqual(JSON.parse(readFileSync(OPENAPI_FILE, "utf8")), served);
 });
