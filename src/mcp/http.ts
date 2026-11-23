@@ -7,7 +7,7 @@ import { mcpConfig } from "../config";
 import type { Db } from "../db/db";
 import { pool } from "../db/db";
 import { ensureIndexed } from "./docsService";
-import { createMcpServer } from "./server";
+import { SEARCH_TOOL, SERVER_NAME, createMcpServer } from "./server";
 
 export function createMcpHttpApp(db: Db): Express {
   const app = express();
@@ -25,6 +25,19 @@ export function createMcpHttpApp(db: Db): Express {
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
+  });
+
+  // A browser opening the address gets a short description instead of a bare error.
+  // An MCP client's GET asks for an event stream (Accept: text/event-stream); that still
+  // gets the 405 below, which is how the MCP specification says "no stream offered".
+  app.get("/mcp", (req, res, next) => {
+    if ((req.headers.accept ?? "").includes("text/event-stream")) return next();
+    res.json({
+      name: SERVER_NAME,
+      protocol: "Model Context Protocol (MCP), Streamable HTTP, stateless",
+      howToUse: "Connect an MCP client to this URL, or POST JSON-RPC here (initialize, tools/list, tools/call).",
+      tools: [SEARCH_TOOL],
+    });
   });
 
   // Stateless: there is no stream to open (GET) or session to end (DELETE).

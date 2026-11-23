@@ -209,7 +209,13 @@ test("over Streamable HTTP (the deployable service), stateless", async () => {
     });
     assert.equal(init.status, 200);
     assert.equal(init.headers.get("mcp-session-id"), null);
-    assert.equal((await fetch(`${base}/mcp`)).status, 405);
+
+    // A browser's GET gets a description; an MCP client's GET (event stream) and DELETE get 405.
+    const info = await fetch(`${base}/mcp`, { headers: { Accept: "text/html,*/*" } });
+    assert.equal(info.status, 200);
+    assert.deepEqual(((await info.json()) as { name: string; tools: string[] }).tools, ["search_billing_documentation"]);
+    assert.equal((await fetch(`${base}/mcp`, { headers: { Accept: "text/event-stream" } })).status, 405);
+    assert.equal((await fetch(`${base}/mcp`, { method: "DELETE" })).status, 405);
     assert.deepEqual(await (await fetch(`${base}/health`)).json(), { status: "ok" });
   } finally {
     await client.close();

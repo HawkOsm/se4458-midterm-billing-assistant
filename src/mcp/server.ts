@@ -13,11 +13,14 @@ const Match = z.object({
   text: z.string(),
 });
 
+export const SERVER_NAME = "billing-docs";
+export const SEARCH_TOOL = "search_billing_documentation";
+
 export function createMcpServer(db: Db): McpServer {
-  const server = new McpServer({ name: "billing-docs", version: "1.0.0" });
+  const server = new McpServer({ name: SERVER_NAME, version: "1.0.0" });
 
   server.registerTool(
-    "search_billing_documentation",
+    SEARCH_TOOL,
     {
       title: "Search the billing guide",
       description:

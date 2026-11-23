@@ -12,7 +12,8 @@ Built with TypeScript, Express and PostgreSQL.
 - **API Gateway:** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1 (the base URL: lists
   the version and its routes)
 - **Swagger (through the gateway):** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api-docs/
-- **MCP server:** https://bi-814046f5580045559bc8c2452688e657.ecs.eu-north-1.on.aws/mcp
+- **MCP server:** https://bi-814046f5580045559bc8c2452688e657.ecs.eu-north-1.on.aws/mcp (for MCP
+  clients, which POST to it; a browser gets a short description)
 - **Source code:** https://github.com/HawkOsm/se4458-midterm-billing-assistant
 - **Swagger page (local):** http://localhost:3000/api-docs/ (raw spec: `/openapi.json`)
 - **OpenAPI specification file:** [docs/openapi.json](docs/openapi.json) (OpenAPI 3.0.3, written
