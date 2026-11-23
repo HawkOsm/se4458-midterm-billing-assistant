@@ -8,6 +8,7 @@ logged-in subscriber's questions by choosing the billing API, the guide or both.
 on AWS (eu-north-1) behind an API Gateway: see [Deployment](#deployment).
 Built with TypeScript, Express and PostgreSQL.
 
+- **Demo video (5 min, no sound):** [docs/demo-video.mp4](docs/demo-video.mp4), see [Demo video](#demo-video)
 - **AI agent (chat page):** https://bi-b64790aca077475db74fde98548c2894.ecs.eu-north-1.on.aws/
 - **API Gateway:** https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1 (the base URL: lists
   the version and its routes)
@@ -535,6 +536,27 @@ the public one above; it is in Secrets Manager:
   through the gateway and the MCP server, explained the late-payment rules from §6, and stopped
   a $10 payment at the confirmation (declined, nothing paid).
 
+## Demo video
+
+[docs/demo-video.mp4](docs/demo-video.mp4) (5 minutes, no sound), recorded on the AWS deployment
+(November 23, 2026). In order:
+
+1. The README on GitHub.
+2. The AI agent, logged in as ayse, with "Show steps" open after each answer:
+   - MCP only: "How much does extra internet cost?" → `search_billing_documentation`
+   - API only: "What is my October bill?" → `query_bill`
+   - combined: "Why is my October bill higher than September?" → `query_bill_detailed` for
+     October and for September, then `search_billing_documentation`
+   - payment: "Pay $10 from my September bill", the confirmation box, then Confirm
+   - another subscriber's bill (5559999), which the agent refuses
+3. Swagger through the API Gateway: login, Authorize, then Query Bill Detailed (protected, paged):
+   ayse's own bill 5551234 (200, with a page of usage events), 5559999 (403), and after Logout
+   without a token (401).
+4. The AWS console: the ECS cluster with the three services, and the RDS database.
+
+The direct call refused without the gateway, the three MCP retrieval tests and the unit test run
+are in the screenshots below.
+
 ## Screenshots
 
 Taken on the AWS deployment (November 23, 2026). In the chat, "Show steps" opens the tool trace:
@@ -598,10 +620,6 @@ taken, before the login lockout and index page tests).
 ![Unit tests, end](docs/screenshots/10-unit-tests-2.png)
 
 The login page: [docs/screenshots/01-agent-login.webp](docs/screenshots/01-agent-login.webp).
-
-## Not done yet
-
-- **Demo video.**
 
 ## References
 
