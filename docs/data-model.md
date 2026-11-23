@@ -8,8 +8,6 @@ Two separate stores in one PostgreSQL server (Docker locally; Amazon RDS in eu-n
 - schema `billing` — live records used by the REST APIs
 - schema `docs` — the indexed billing guide, used only by the MCP server
 
-Redis (ElastiCache) is planned as a cache for Query Bill responses (not built yet); it will hold no tables.
-
 ## ER diagram — `billing` schema
 
 ```mermaid

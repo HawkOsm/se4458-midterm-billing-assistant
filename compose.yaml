@@ -1,5 +1,5 @@
 # Local development services. Start: docker compose up -d   Stop: docker compose down
-# Production uses RDS PostgreSQL and ElastiCache Redis in eu-north-1 instead.
+# Production uses RDS PostgreSQL in eu-north-1 instead.
 # Values come from .env (see .env.example); the defaults below are local-only.
 
 services:
@@ -15,16 +15,6 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7.2-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10

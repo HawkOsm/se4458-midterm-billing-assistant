@@ -21,7 +21,7 @@ Built with TypeScript, Express and PostgreSQL.
 Run locally (Node 24 and Docker):
 
 ```
-docker compose up -d        # PostgreSQL 17 (and Redis) on localhost
+docker compose up -d        # PostgreSQL 17 on localhost
 cp .env.example .env        # works as it is for a local run
 npm install
 npm run migrate             # creates the tables (migrations/*.sql)
@@ -520,7 +520,6 @@ The login page: [docs/screenshots/01-agent-login.webp](docs/screenshots/01-agent
 
 ## Not done yet
 
-- **Redis cache** for Query Bill (Redis already runs in `compose.yaml`, unused so far).
 - **Demo video.**
 
 ## References
