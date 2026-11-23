@@ -1,0 +1,12 @@
+# Keep secrets, local builds and course material out of the image (and the build context).
+.env
+.env.*
+node_modules
+dist
+assets
+test
+docs
+deploy
+.git
+.claude
+*.log
