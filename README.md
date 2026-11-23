@@ -455,10 +455,73 @@ the public one above; it is in Secrets Manager:
   through the gateway and the MCP server, explained the late-payment rules from §6, and stopped
   a $10 payment at the confirmation (declined, nothing paid).
 
+## Screenshots
+
+Taken on the AWS deployment (November 23, 2026). In the chat, "Show steps" opens the tool trace:
+each tool's name, input and result, under the final answer.
+
+**Agent, MCP only:** "How much does extra internet cost?" → `search_billing_documentation`,
+answer cites §8.1 and §3.2.
+
+![MCP-only scenario](docs/screenshots/02-agent-mcp-only.webp)
+
+**Agent, API only:** "What is my October bill?" → `query_bill` (through the API Gateway).
+
+![API-only scenario](docs/screenshots/03-agent-api-only.png)
+
+**Agent, combined:** "Why is my October bill higher than September?" → `query_bill_detailed` for
+both months, then `search_billing_documentation`; the answer explains +$20 internet (§3.1, §3.2)
+and +$10 phone (§2.2).
+
+![Combined scenario](docs/screenshots/04-agent-combined.png)
+
+**Confirmed simulated payment:** the code asks for confirmation with the subscriber, month and
+amount (guide §5.2); only after Confirm does `pay_bill` run, and the answer reports the API's
+result (§5.3).
+
+![Payment confirmation](docs/screenshots/05-payment-confirmation.png)
+![Payment confirmed](docs/screenshots/06-payment-confirmed.png)
+
+**Three MCP retrieval tests** against the deployed MCP server ("extra internet cost",
+"partial payment", "dispute window"):
+
+![MCP retrieval tests](docs/screenshots/07-mcp-retrieval-tests.png)
+
+**Protected gateway route, in Swagger through the API Gateway**
+(https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api-docs/; every request URL is the
+gateway's). Log in, paste the token into Authorize, then call Query Bill Detailed (protected,
+paged with `offset` and `limit`):
+
+1. `POST /api/v1/login` as ayse returns a 15-minute Bearer token.
+
+   ![Swagger login](docs/screenshots/11-swagger-login.png)
+2. The token goes into Authorize (`bearerAuth`).
+
+   ![Swagger authorize](docs/screenshots/12-swagger-authorize.png)
+3. Her own October bill: **200**, with the breakdown and the first page of usage events.
+
+   ![Protected route, 200](docs/screenshots/13-swagger-protected-200.png)
+4. Mehmet's bill (5559999) with Ayse's token: **403** "You can only access your own account".
+
+   ![Another subscriber, 403](docs/screenshots/14-swagger-other-subscriber-403.png)
+5. After Logout, no token: **401** "Missing or malformed Authorization header" (the error example).
+
+   ![No token, 401](docs/screenshots/15-swagger-no-token-401.png)
+
+The same three calls with curl:
+[docs/screenshots/08-gateway-protected-route.png](docs/screenshots/08-gateway-protected-route.png).
+
+**Unit tests** (`docker compose up -d && npm test`): 212 passing.
+
+![Unit tests, start](docs/screenshots/09-unit-tests-1.png)
+![Unit tests, end](docs/screenshots/10-unit-tests-2.png)
+
+The login page: [docs/screenshots/01-agent-login.webp](docs/screenshots/01-agent-login.webp).
+
 ## Not done yet
 
 - **Redis cache** for Query Bill (Redis already runs in `compose.yaml`, unused so far).
-- **Demo video** and screenshots.
+- **Demo video.**
 
 ## References
 
