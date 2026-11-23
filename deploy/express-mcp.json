@@ -1,0 +1,27 @@
+{
+  "serviceName": "billing-mcp",
+  "cluster": "default",
+  "executionRoleArn": "arn:aws:iam::860897619048:role/ecsTaskExecutionRole",
+  "infrastructureRoleArn": "arn:aws:iam::860897619048:role/ecsInfrastructureRoleForExpressServices",
+  "primaryContainer": {
+    "image": "860897619048.dkr.ecr.eu-north-1.amazonaws.com/billing-assistant:706006d",
+    "containerPort": 8080,
+    "command": ["node", "dist/mcp/http.js"],
+    "environment": [
+      { "name": "APP_ENV", "value": "production" },
+      { "name": "MCP_PORT", "value": "8080" },
+      { "name": "POSTGRES_HOST", "value": "billing-db.cn66iuysyail.eu-north-1.rds.amazonaws.com" },
+      { "name": "POSTGRES_DB", "value": "billing" },
+      { "name": "POSTGRES_USER", "value": "billing" },
+      { "name": "POSTGRES_SSL", "value": "true" }
+    ],
+    "secrets": [
+      { "name": "POSTGRES_PASSWORD", "valueFrom": "arn:aws:secretsmanager:eu-north-1:860897619048:secret:billing/db-password-IC5l6q" }
+    ]
+  },
+  "healthCheckPath": "/health",
+  "cpu": "256",
+  "memory": "512",
+  "scalingTarget": { "minTaskCount": 1, "maxTaskCount": 1 },
+  "tags": [{ "key": "project", "value": "se4458-billing" }]
+}

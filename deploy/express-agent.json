@@ -1,0 +1,27 @@
+{
+  "serviceName": "billing-agent",
+  "cluster": "default",
+  "executionRoleArn": "arn:aws:iam::860897619048:role/ecsTaskExecutionRole",
+  "infrastructureRoleArn": "arn:aws:iam::860897619048:role/ecsInfrastructureRoleForExpressServices",
+  "primaryContainer": {
+    "image": "860897619048.dkr.ecr.eu-north-1.amazonaws.com/billing-assistant:706006d",
+    "containerPort": 8080,
+    "command": ["node", "dist/agent/server.js"],
+    "environment": [
+      { "name": "APP_ENV", "value": "production" },
+      { "name": "AGENT_PORT", "value": "8080" },
+      { "name": "API_BASE_URL", "value": "https://e57dg4znaj.execute-api.eu-north-1.amazonaws.com/api/v1" },
+      { "name": "MCP_URL", "value": "https://bi-814046f5580045559bc8c2452688e657.ecs.eu-north-1.on.aws/mcp" },
+      { "name": "AGENT_DAILY_LIMIT_PER_USER", "value": "40" },
+      { "name": "AGENT_DAILY_LIMIT_TOTAL", "value": "400" }
+    ],
+    "secrets": [
+      { "name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:eu-north-1:860897619048:secret:billing/anthropic-api-key-2IsKrs" }
+    ]
+  },
+  "healthCheckPath": "/health",
+  "cpu": "256",
+  "memory": "512",
+  "scalingTarget": { "minTaskCount": 1, "maxTaskCount": 1 },
+  "tags": [{ "key": "project", "value": "se4458-billing" }]
+}

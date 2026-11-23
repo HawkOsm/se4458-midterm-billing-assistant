@@ -1,0 +1,37 @@
+{
+  "family": "billing-migrate",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::860897619048:role/ecsTaskExecutionRole",
+  "runtimePlatform": { "cpuArchitecture": "X86_64", "operatingSystemFamily": "LINUX" },
+  "containerDefinitions": [
+    {
+      "name": "migrate",
+      "image": "860897619048.dkr.ecr.eu-north-1.amazonaws.com/billing-assistant:tools-706006d",
+      "essential": true,
+      "environment": [
+        { "name": "APP_ENV", "value": "production" },
+        { "name": "POSTGRES_HOST", "value": "billing-db.cn66iuysyail.eu-north-1.rds.amazonaws.com" },
+        { "name": "POSTGRES_DB", "value": "billing" },
+        { "name": "POSTGRES_USER", "value": "billing" },
+        { "name": "POSTGRES_SSL", "value": "true" },
+        { "name": "SEED_PASSWORD_AYSE", "value": "Demo-Ayse-2025" },
+        { "name": "SEED_PASSWORD_MEHMET", "value": "Demo-Mehmet-2025" }
+      ],
+      "secrets": [
+        { "name": "POSTGRES_PASSWORD", "valueFrom": "arn:aws:secretsmanager:eu-north-1:860897619048:secret:billing/db-password-IC5l6q" },
+        { "name": "SEED_PROVIDER_API_KEY", "valueFrom": "arn:aws:secretsmanager:eu-north-1:860897619048:secret:billing/provider-api-key-c0bvCc" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/billing-migrate",
+          "awslogs-region": "eu-north-1",
+          "awslogs-stream-prefix": "migrate"
+        }
+      }
+    }
+  ]
+}
