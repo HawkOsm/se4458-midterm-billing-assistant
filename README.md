@@ -176,6 +176,10 @@ Not stated in the assignment or the billing guide, so decided here:
   real-looking $50 bill is made for the future. The current month can be calculated, but its
   bill is marked `estimate: true` until the month ends (guide §4.4: an estimate must not look
   like the confirmed bill).
+- **The spec's "Apr 2025 75$" example** is read as an example response shape, not a required
+  bill: under the guide's prices a total is always $50 plus a multiple of $10 (phone in $10
+  blocks, internet $50 + $10 blocks), so exactly $75 can't come from any usage. The demo data
+  uses real-looking months instead (Ayse September 2026 $50, October 2026 $80).
 - **Quantity:** the assignment records one unit per Add Usage call (10 minutes or 1 MB). The API
   also takes an optional `quantity` (default 1, at most 10,000), so heavy usage needs fewer calls.
 - **Payments:** simulated, no card processing. An amount is `"25.50"` or `25.5` with at most 2
